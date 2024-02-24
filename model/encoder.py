@@ -79,6 +79,7 @@ class UNet(nn.Module):
 if __name__ == '__main__' :
     B, C, H, W = 4, 3, 256, 256
     model = UNet(out_channels=64)
-    x = torch.rand((B, C, H, W))
+    x = torch.rand((B, 2, C, H, W))
 
-    print(model(x).shape)
+    feat1, feat2 = model(x[0, :1]), model(x[0, 1:])
+    print(feat1.shape)

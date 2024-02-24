@@ -174,3 +174,87 @@ def volumetric_rendering(rgb, density, t_vals, dirs, white_bkgd):
     if white_bkgd:
         comp_rgb = comp_rgb + (1. - acc[..., None])
     return comp_rgb, distance, acc, weights, alpha
+
+######################################### Ray helper #########################################
+def get_rays_mvs(H, W, intrinsic, c2w, w2c, N=1024, isRandom=True, is_precrop_iters=False, chunk=-1, idx=-1):
+    """
+    rays_o              : [3]
+    rays_d              : [N, 3] N=N_rays
+    pixel_coordinates   : [2, N]
+    """
+    device = c2w.device
+    if isRandom:
+        if is_precrop_iters and torch.rand((1,)) > 0.3:
+            xs, ys = torch.randint(W//6, W-W//6, (N,)).float().to(device), torch.randint(H//6, H-H//6, (N,)).float().to(device)
+        else:
+            xs, ys = torch.randint(0,W,(N,)).float().to(device), torch.randint(0,H,(N,)).float().to(device)
+    else:
+        ys, xs = torch.meshgrid(torch.linspace(0, H - 1, H), torch.linspace(0, W - 1, W))  # pytorch's meshgrid has indexing='ij'
+        ys, xs = ys.reshape(-1), xs.reshape(-1)
+        if chunk>0:
+            ys, xs = ys[idx*chunk:(idx+1)*chunk], xs[idx*chunk:(idx+1)*chunk]
+        ys, xs = ys.to(device), xs.to(device)
+
+    dirs = torch.stack([(xs-intrinsic[0,2])/intrinsic[0,0], (ys-intrinsic[1,2])/intrinsic[1,1], torch.ones_like(xs)], -1) # use 1 instead of -1
+
+    rays_d = dirs @ c2w[:3,:3].t() # dot product, equals to: [c2w.dot(dir) for dir in dirs]
+    # Translate camera frame's origin to the world frame. It is the origin of all rays.
+    rays_o = c2w[:3,-1].clone()
+    pixel_coordinates = torch.stack((ys,xs)) # row col
+    return rays_o, rays_d, pixel_coordinates
+
+def build_rays(imgs, c2ws, intrinsics, N_rays, feat_map):
+    """
+    Args
+    imgs        : [B, N, 3, C, H, W]
+    c2ws        : [N, 4, 4]
+    intrinsics  : [N, 3, 3]
+    N_rays      : #of rays
+    feat_map    : [B, V, E, H, W]
+
+    Return
+    rays_os, rays_ds, viewdirs, colors  : [N, N_rays, 3]
+    feats   : [N, N_rays, E]
+    """
+    device = imgs.device
+
+    # Reference (image1), V=2
+    B, N, C, H, W = imgs.shape
+    rays_os, rays_ds, viewdirs, colors, feats = [],[],[],[],[],[]
+
+    for i in range(N-1,N):
+        intrinsic = intrinsics[i]
+        c2w = c2ws[i].clone()
+        rays_o, rays_d, pixel_coordinates = get_rays_mvs(H, W, intrinsic, c2w, N_rays)   # [3], [N_rays 3], [2, N]
+
+        # ray dir
+        rays_ds.append(rays_d)            # rays_d : [N_rays, 3]
+
+        # viewdir
+        viewdir = rays_d
+        viewdir = viewdir / torch.norm(viewdir, dim=-1, keepdim=True)
+        viewdir = torch.reshape(viewdir, [-1,3]).float()
+        viewdirs.append(viewdir)
+
+        # position
+        rays_o = rays_o.reshape(1, 3)           # rays_o : [1, 3]
+        rays_o = rays_o.expand(N_rays, -1)      # rays_o : [N_rays, 3]
+        rays_os.append(rays_o)
+
+        # colors (Unprocessed but Norm)
+        pixel_coordinates_int = pixel_coordinates.long()    # [2, N]
+        color = imgs[0, i, :, pixel_coordinates_int[0], pixel_coordinates_int[1]].permute(1,0)      # [N_rays, 3]
+        colors.append(color)   
+
+        # features 
+        feat = feat_map[0, i, :, pixel_coordinates_int[0], pixel_coordinates_int[1]].permute(1,0)   # [N_rays, E]
+        feats.append(feat)   
+
+    rays_ds = torch.stack(rays_ds, dim=0)       # [N, N_rays, 3]
+    rays_os = torch.stack(rays_os, dim=0)       # [N, N_rays, 3]
+    viewdirs = torch.stack(viewdirs, dim=0)     # [N, N_rays, 3]
+    
+    colors = torch.stack(colors, dim=0)     # [N, N_rays, 3]
+    feats = torch.cat(feats, dim=0)         # [N, N_rays, E]
+
+    return rays_os, rays_ds, viewdirs, colors, feats

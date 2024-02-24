@@ -27,6 +27,7 @@ class NeRF(nn.Module):
                  num_levels=2,
                  N_samples=64,
                  hidden=256,
+                 query_dim=64,
                  density_noise=1, 
                  min_deg=0,
                  max_deg=10,
@@ -50,18 +51,13 @@ class NeRF(nn.Module):
 
         # 
         self.positional_encoding = PositionalEncoding(min_deg, max_deg)
-        self.density_net0 = nn.Sequential(
+        self.density_net0 = nn.ModuleList([
             nn.Linear(self.density_input, hidden),  # 0
-            nn.ReLU(True),
-            nn.Linear(hidden, hidden),              # 1 
-            nn.ReLU(True),
+            nn.Linear(hidden, hidden),              # 1
             nn.Linear(hidden, hidden),              # 2
-            nn.ReLU(True),
             nn.Linear(hidden, hidden),              # 3
-            nn.ReLU(True),
-            nn.Linear(hidden, hidden),              # 4
-            nn.ReLU(True)
-        )
+            nn.Linear(hidden, hidden)               # 4
+            ])
         self.density_net1 = nn.Sequential(
             nn.Linear(self.density_input+hidden, hidden),  # 5
             nn.ReLU(True),
@@ -91,30 +87,40 @@ class NeRF(nn.Module):
             nn.Linear(input_shape, 3),
             nn.Sigmoid()
         )
+
+        # 
+        self.pts_bias = nn.Linear(query_dim, hidden)
+        self.relu = nn.ReLU(True)
+
         _xavier_init(self)
         self.to(device)
 
-    def forward(self, ray_batch, feat1, feat2, c1, c2):
-        comp_rgbs, distances, accs = [], [], []
+    def forward(self, rays_o, rays_d, near, far, view_dirs, feat, c):
+        """
+        rays_o, rays_d, view_dirs : [N_rays, 3]
+        near, far : [N_rays, 1]
 
-        rays_o, rays_d = ray_batch[:,0:3], ray_batch[:,3:6]                 # [N_rays, 3] each
-        bounds = torch.reshape(ray_batch[...,6:8], [-1,1,2])                # [N_rays, 1, 2]
-        near, far = bounds[...,0], bounds[...,1]                            # [N_rays, 1]
-        view_dirs = ray_batch[:,-3:] if ray_batch.shape[-1] > 9 else None   # [N_rays, 3]
+        feat1, feat2    : [N_rays, E]
+        c1, c2          : [N_rays, 3]
+        """
+        comp_rgbs, distances, accs = [], [], []
 
         for l in ['coarse', 'fine']:
             if l == 'coarse' : 
-                t_vals, (mean, var) = sample_along_rays(rays_o, rays_d, self.N_samples,
+                t_vals, pts = sample_along_rays(rays_o, rays_d, self.N_samples,
                                                         near, far, randomized=self.randomized, lindisp=False)   
             elif l == 'fine' :
-                t_vals, (mean, var) = resample_along_rays(rays_o, rays_d, t_vals.to(rays_o.device), weights.to(rays_o.device),
+                t_vals, pts = resample_along_rays(rays_o, rays_d, t_vals.to(rays_o.device), weights.to(rays_o.device),
                                                            self.N_samples, randomized=self.randomized)
             # do integrated positional encoding of samples
-            samples_enc = self.positional_encoding(mean, var)[0]
+            samples_enc = self.positional_encoding(pts)
             samples_enc = samples_enc.reshape([-1, samples_enc.shape[-1]])  # [N_rays*N_samples, 96]
 
             # predict density
-            new_encodings = self.density_net0(samples_enc)                  # [N_rays*N_samples, 256]
+            bias = self.pts_bias(feat)
+            for i, mlp in enumerate(self.density_net0):
+                samples_enc = mlp(samples_enc)*bias
+                samples_enc = self.relu(samples_enc)
             new_encodings = torch.cat((new_encodings, samples_enc), -1)     # [N_rays*N_samples, 256+96]
             new_encodings = self.density_net1(new_encodings)                # [N_rays*N_samples, 256]
             raw_density = self.final_density(new_encodings).reshape((-1, self.N_samples, 1)) # [N_rays, N_samples, 1]
