@@ -23,7 +23,7 @@ class NeRF(nn.Module):
     def __init__(self, 
                  use_viewdirs = True,
                  randomized=False,
-                 white_bkgd=True,
+                 white_bkgd=False,
                  num_levels=2,
                  N_samples=64,
                  hidden=256,

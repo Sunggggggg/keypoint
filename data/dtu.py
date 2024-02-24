@@ -1,85 +1,64 @@
-
-from torch.utils.data import Dataset
-from utils import read_pfm
 import os
 import numpy as np
 import cv2
-from PIL import Image
 import torch
+from PIL import Image
+from torch.utils.data import Dataset
 from torchvision import transforms as T
-import torchvision.transforms.functional as F
+from utils import read_pfm
 
-def colorjitter(img, factor):
-    # brightness_factor,contrast_factor,saturation_factor,hue_factor
-    # img = F.adjust_brightness(img, factor[0])
-    # img = F.adjust_contrast(img, factor[1])
-    img = F.adjust_saturation(img, factor[2])
-    img = F.adjust_hue(img, factor[3]-1.0)
-
-    return img
-
-
-class MVSDatasetDTU(Dataset):
-    def __init__(self, root_dir, split, n_views=3, levels=1, img_wh=None, downSample=1.0, max_len=-1):
-        """
-        img_wh should be set to a tuple ex: (1152, 864) to enable test mode!
-        """
+class MVSDatasetDTU(Dataset) :
+    def __init__(self, root_dir, split, n_views=2, levels=1, img_wh=None, downSample=1.0, max_len=-1):
         self.root_dir = root_dir
         self.split = split
-
-        assert self.split in ['train', 'val', 'test'], \
-            'split must be either "train", "val" or "test"!'
+        self.n_views = n_views
         self.img_wh = img_wh
         self.downSample = downSample
-        self.scale_factor = 1.0 / 200
         self.max_len = max_len
-        if img_wh is not None:
-            assert img_wh[0] % 32 == 0 and img_wh[1] % 32 == 0, \
-                'img_wh must both be multiples of 32!'
+        #
+        self.scale_factor = 1.0 / 200
+
+        # 
         self.build_metas()
-        self.n_views = n_views
-        self.levels = levels  # FPN levels
         self.build_proj_mats()
         self.define_transforms()
-        print(f'==> image down scale: {self.downSample}')
-
-    def define_transforms(self):
-        self.transform = T.Compose([T.ToTensor(),
-                                    T.Normalize(mean=[0.485, 0.456, 0.406],
-                                                std=[0.229, 0.224, 0.225]),
-                                    ])
 
     def build_metas(self):
+        '''
+        dtu_{self.split}_all.txt    : train/val/test scan is fixed
+        dtu_pairs.txt               : ref, src image idx is fixed
+        '''
         self.metas = []
         with open(f'configs/lists/dtu_{self.split}_all.txt') as f:
             self.scans = [line.rstrip() for line in f.readlines()]
 
-        # light conditions 0-6 for training
-        # light condition 3 for testing (the brightest?)
         light_idxs = [3] if 'train' != self.split else range(7)
-
         self.id_list = []
 
         for scan in self.scans:
             with open(f'configs/dtu_pairs.txt') as f:
-                num_viewpoint = int(f.readline())
-                # viewpoints (49)
+                num_viewpoint = int(f.readline()) # 49
                 for _ in range(num_viewpoint):
-                    ref_view = int(f.readline().rstrip())
-                    src_views = [int(x) for x in f.readline().rstrip().split()[1::2]]
+                    ref_view = int(f.readline().rstrip())   # 0
+                    src_views = [int(x) for x in f.readline().rstrip().split()[1::2]] # [10, 1, 9, 12, 11, 13, 2, 8, 14, 27]
                     for light_idx in light_idxs:
                         self.metas += [(scan, light_idx, ref_view, src_views)]
                         self.id_list.append([ref_view] + src_views)
 
         self.id_list = np.unique(self.id_list)
         self.build_remap()
-
+    
+    def build_remap(self):
+        self.remap = np.zeros(np.max(self.id_list) + 1).astype('int')
+        for i, item in enumerate(self.id_list):
+            self.remap[item] = i
+    
     def build_proj_mats(self):
-        proj_mats, intrinsics, world2cams, cam2worlds = [], [], [], []
+        proj_mats, near_far, intrinsics, world2cams, cam2worlds = [], [], [], [], []
         for vid in self.id_list:
             proj_mat_filename = os.path.join(self.root_dir,
                                              f'Cameras/train/{vid:08d}_cam.txt')
-            intrinsic, extrinsic, near_far = self.read_cam_file(proj_mat_filename)
+            intrinsic, extrinsic, near_far_l = self.read_cam_file(proj_mat_filename)
             intrinsic[:2] *= 4
             extrinsic[:3, 3] *= self.scale_factor
 
@@ -91,13 +70,14 @@ class MVSDatasetDTU(Dataset):
             intrinsic[:2] = intrinsic[:2] / 4
             proj_mat_l[:3, :4] = intrinsic @ extrinsic[:3, :4]
 
-            proj_mats += [(proj_mat_l, near_far)]
+            proj_mats += [proj_mat_l]
+            near_far += [near_far_l]
             world2cams += [extrinsic]
             cam2worlds += [np.linalg.inv(extrinsic)]
 
-        self.proj_mats, self.intrinsics = np.stack(proj_mats), np.stack(intrinsics)
+        self.proj_mats, self.near_far, self.intrinsics = np.stack(proj_mats), np.stack(near_far),np.stack(intrinsics)
         self.world2cams, self.cam2worlds = np.stack(world2cams), np.stack(cam2worlds)
-
+    
     def read_cam_file(self, filename):
         with open(filename) as f:
             lines = [line.rstrip() for line in f.readlines()]
@@ -112,7 +92,11 @@ class MVSDatasetDTU(Dataset):
         depth_max = depth_min + float(lines[11].split()[1]) * 192 * self.scale_factor
         self.depth_interval = float(lines[11].split()[1])
         return intrinsics, extrinsics, [depth_min, depth_max]
-
+    
+    def define_transforms(self):
+        self.transform = T.Compose([T.ToTensor(),
+                                    T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),])
+        
     def read_depth(self, filename):
         depth_h = np.array(read_pfm(filename)[0], dtype=np.float32)  # (800, 800)
         depth_h = cv2.resize(depth_h, None, fx=0.5, fy=0.5,
@@ -125,12 +109,7 @@ class MVSDatasetDTU(Dataset):
         mask = depth > 0
 
         return depth, mask, depth_h
-
-    def build_remap(self):
-        self.remap = np.zeros(np.max(self.id_list) + 1).astype('int')
-        for i, item in enumerate(self.id_list):
-            self.remap[item] = i
-
+    
     def __len__(self):
         return len(self.metas) if self.max_len <= 0 else self.max_len
 
@@ -138,31 +117,31 @@ class MVSDatasetDTU(Dataset):
         sample = {}
         scan, light_idx, target_view, src_views = self.metas[idx]
         if self.split=='train':
-            ids = torch.randperm(5)[:3]
+            ids = torch.randperm(5)[:self.n_views-1]
             view_ids = [src_views[i] for i in ids] + [target_view]
         else:
-            view_ids = [src_views[i] for i in range(3)] + [target_view]
-
-
+            view_ids = [src_views[i] for i in range(self.n_views-1)] + [target_view]
+        
         affine_mat, affine_mat_inv = [], []
         imgs, depths_h = [], []
         proj_mats, intrinsics, w2cs, c2ws, near_fars = [], [], [], [], []  # record proj mats between views
         for i, vid in enumerate(view_ids):
-
-            # NOTE that the id in image file names is from 1 to 49 (not 0~48)
             img_filename = os.path.join(self.root_dir,
                                         f'Rectified/{scan}_train/rect_{vid + 1:03d}_{light_idx}_r5000.png')
             depth_filename = os.path.join(self.root_dir,
                                           f'Depths/{scan}/depth_map_{vid:04d}.pfm')
 
+            # Read image
             img = Image.open(img_filename)
             img_wh = np.round(np.array(img.size) * self.downSample).astype('int')
             img = img.resize(img_wh, Image.BILINEAR)
             img = self.transform(img)
             imgs += [img]
 
+            # Read parameters
             index_mat = self.remap[vid]
-            proj_mat_ls, near_far = self.proj_mats[index_mat]
+            proj_mat_ls = self.proj_mats[index_mat]
+            near_far = self.near_far[index_mat]
             intrinsics.append(self.intrinsics[index_mat])
             w2cs.append(self.world2cams[index_mat])
             c2ws.append(self.cam2worlds[index_mat])
@@ -185,10 +164,6 @@ class MVSDatasetDTU(Dataset):
             near_fars.append(near_far)
 
         imgs = torch.stack(imgs).float()
-        # if self.split == 'train':
-        #     imgs = colorjitter(imgs, 1.0+(torch.rand((4,))*2-1.0)*0.5)
-        # imgs = F.normalize(imgs,mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-
         depths_h = np.stack(depths_h)
         proj_mats = np.stack(proj_mats)[:, :3]
         affine_mat, affine_mat_inv = np.stack(affine_mat), np.stack(affine_mat_inv)
@@ -211,5 +186,3 @@ class MVSDatasetDTU(Dataset):
         sample['c2ws_all'] = c2ws_all.astype(np.float32)
 
         return sample
-
-

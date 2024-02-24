@@ -1,4 +1,67 @@
-import torch
+import re, torch
+import numpy as np
+
+def read_pfm(filename):
+    file = open(filename, 'rb')
+    color = None
+    width = None
+    height = None
+    scale = None
+    endian = None
+
+    header = file.readline().decode('utf-8').rstrip()
+    if header == 'PF':
+        color = True
+    elif header == 'Pf':
+        color = False
+    else:
+        raise Exception('Not a PFM file.')
+
+    dim_match = re.match(r'^(\d+)\s(\d+)\s$', file.readline().decode('utf-8'))
+    if dim_match:
+        width, height = map(int, dim_match.groups())
+    else:
+        raise Exception('Malformed PFM header.')
+
+    scale = float(file.readline().rstrip())
+    if scale < 0:  # little-endian
+        endian = '<'
+        scale = -scale
+    else:
+        endian = '>'  # big-endian
+
+    data = np.fromfile(file, endian + 'f')
+    shape = (height, width, 3) if color else (height, width)
+
+    data = np.reshape(data, shape)
+    data = np.flipud(data)
+    file.close()
+    return data, scale
+
+def sub_selete_data(data_batch, device, idx, filtKey=[], filtIndex=['view_ids_all','c2ws_all','scan','bbox','w2ref','ref2w','light_id','ckpt','idx']):
+    data_sub_selete = {}
+    for item in data_batch.keys():
+        data_sub_selete[item] = data_batch[item][:,idx].float() if (item not in filtIndex and torch.is_tensor(item) and item.dim()>2) else data_batch[item].float()
+        if not data_sub_selete[item].is_cuda:
+            data_sub_selete[item] = data_sub_selete[item].to(device)
+    return data_sub_selete
+
+def decode_batch(batch, device, idx=list(torch.arange(4))):
+
+    data_mvs = sub_selete_data(batch, device, idx, filtKey=[])
+    pose_ref = {'w2cs': data_mvs['w2cs'].squeeze(), 'intrinsics': data_mvs['intrinsics'].squeeze(),
+                'c2ws': data_mvs['c2ws'].squeeze(),'near_fars':data_mvs['near_fars'].squeeze()}
+
+    return data_mvs, pose_ref
+
+def unpreprocess(self, data, shape=(1,1,3,1,1)):
+        # to unnormalize image for visualization
+        # data N V C H W
+        device = data.device
+        mean = torch.tensor([-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225]).view(*shape).to(device)
+        std = torch.tensor([1 / 0.229, 1 / 0.224, 1 / 0.225]).view(*shape).to(device)
+
+        return (data - mean) / std
 
 def sample_along_rays(origins, directions, num_samples, near, far, randomized, lindisp):
     """
