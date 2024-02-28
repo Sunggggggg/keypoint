@@ -160,6 +160,19 @@ class RealEstate10k():
         return len(self.all_scenes)
         
     def __getitem__(self, idx):
+        """
+        Return : dict
+        {'query': query, 'context': ctxt}, query
+        query
+            'rgb'           : [B, num_query_views, 1024, 3]
+            'cam2world'     : [B, num_query_views, 4, 4]
+            'intrinsics'    : [B, num_query_views, 4, 4]
+            'uv'            : [B, num_query_views, 1024, xy]
+        context
+            'rgb'           : [B, num_ctxt_views, H, W, 3]
+            'cam2world'     : [B, num_ctxt_views, 4, 4]
+            'intrinsics'    : [B, num_ctxt_views, 4, 4]
+        """
         scene_path = self.all_scenes[idx]
         npz_files = sorted(scene_path.glob("*.npz"))
 
@@ -216,7 +229,9 @@ class RealEstate10k():
 
         id_feat = np.array(id_feats)
 
-        # num_query_views : view sampling btw [nframe_view, [low, high]]
+        # num_query_views   : view sampling btw [nframe_view, [low, high]]
+        # id_render         : Query view
+        # id_feat           : Context view
         if self.num_ctxt_views == 2:
             low = np.min(id_feat) - 64
             high = np.max(id_feat) + 64
