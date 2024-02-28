@@ -69,7 +69,8 @@ class VolumeAttention(nn.Module):
         quries = self.quries.expand(B, self.num_query, self.query_dim)
         query1 = self.cross_attention(quries, feat1.permute(0, 2, 1), feat1.permute(0, 2, 1)) #[B, Q, e]
         query2 = self.cross_attention(quries, feat2.permute(0, 2, 1), feat2.permute(0, 2, 1)) #[B, Q, e]
-        query = (query1+query2)/2
+
+        # Query aggregation
         
         feat1 = torch.matmul(query, feat1)    # [B, Q, e]*[B, e, hw] = [B, Q, hw]
         feat2 = torch.matmul(query, feat2)    

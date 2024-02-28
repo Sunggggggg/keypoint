@@ -4,7 +4,8 @@ def config_parser():
     parser = configargparse.ArgumentParser()
 
     # Basic
-    parser.add_argument("--expname", type=str, help='experiment name')
+    parser.add_argument("--expname", type=str)
+    parser.add_argument("--config", is_config_file=True)
     # Dataset
     parser.add_argument("--dataset_name", type=str, default='dtu')
     parser.add_argument("--datadir", type=str, default='/home/dev4/data/SKY/datasets/mvs_trainig/dtu')
@@ -14,6 +15,8 @@ def config_parser():
     # Trainer
     parser.add_argument("--num_epochs", type=int, default=8)
     parser.add_argument("--lrate", type=float, default=5e-4)
+    # Checkpoint
+    parser.add_argument("--checkpoint_path", type=str, default=None)
     
     
-    return parser
+    return parser.parse_args()

@@ -1,7 +1,7 @@
 import torch
 from .NeRF import NeRF
-from .queries import VolumeAttention
-from .encoder import UNet
+from .Queries import VolumeAttention
+from .Encoder import UNet
 
 def create_model(args, rank):
     grad_vars = []
