@@ -164,7 +164,7 @@ class RealEstate10k():
         npz_files = sorted(scene_path.glob("*.npz"))
 
         name = scene_path.name
-
+        print(name, npz_files)
         # if dont find scene, random select scene
         if name not in self.all_pose:
             return self.__getitem__(random.randint(0, len(self.all_scenes) - 1))
