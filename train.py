@@ -1,11 +1,18 @@
 import os
+import random
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 import torch.multiprocessing as mp
 
 from config import config_parser
 from set_multi_gpus import set_ddp
+from dataset import RealEstate10k
 import models
+
+def worker_init_fn():
+    random.seed(int(torch.utils.data.get_worker_info().seed)%(2**32-1))
+    np.random.seed(int(torch.utils.data.get_worker_info().seed)%(2**32-1))
 
 def train(rank, world_size, args):
     # Multi gpus
@@ -13,7 +20,24 @@ def train(rank, world_size, args):
     set_ddp(rank, world_size)
 
     # Dataset
+    if args.dataset_name == 'realestate':
+        # Train
+        img_root = os.path.join(args.img_root, 'train')
+        pose_root = os.path.join(args.pose_root, 'train.mat')
+        train_dataset = RealEstate10k(img_root, pose_root, 
+                                    args.num_ctxt_views, args.num_query_views, args.query_sparsity, 
+                                    args.augment, args.lpips)
+        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
+                                drop_last=True, num_workers=8, pin_memory=False, worker_init_fn=worker_init_fn)
 
+        # Val
+        img_root = os.path.join(args.img_root, 'val')
+        pose_root = os.path.join(args.pose_root, 'val.mat')
+        val_dataset = RealEstate10k(img_root, pose_root, num_ctxt_views=args.views, num_query_views=1, augment=False)
+        val_loader = DataLoader(val_dataset, batch_size=8, shuffle=True, drop_last=True, num_workers=4, pin_memory=False, worker_init_fn=worker_init_fn)
+
+    elif args.dataset_name == 'adic':
+        return
 
     # Model
     model = models.QueryAttentionRenderer()
