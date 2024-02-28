@@ -1,7 +1,7 @@
 from dataset import RealEstate10k
 
 img_root = '/home/dev4/data/SKY/datasets/data_download/realestate/train'
-pose_root = '/home/dev4/data/SKY/datasets/data_download/poses/realestate/train.mat'
+pose_root = '/home/dev4/data/SKY/datasets/poses/realestate/train.mat'
 num_ctxt_views = 2
 num_query_views = 1
 
