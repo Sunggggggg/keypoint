@@ -163,20 +163,23 @@ def get_intersection(line_1, line_2):
 
 
 def get_epipolar_lines_volumetric(plucker_cam, cam2world, intrinsics, H, W, npoints, debug=False):
-    '''Get epipolar lines for plucker coordinates in camera frame. Epi line is returned as homogenous line.'''
-    camera_origin = p1 = get_ray_origin(cam2world)[:, :, None]
+    '''Get epipolar lines for plucker coordinates in camera frame. Epi line is returned as homogenous line.
+    Args 
+        plucker_cam             : [B, 2, 1024, 6]
+        cam2world, intrinsics   : [B, 2, 4, 4]
+    '''
+    camera_origin = p1 = get_ray_origin(cam2world)[:, :, None]  # [B, 2, 1, 3]
 
-    p1 = p1
+    p1 = p1         # [B, 2, 1, 3]
     near = 0.1
     far = 10.0
 
     interval = torch.linspace(0.1, 10., npoints).to(cam2world.device)
 
-    interp_points = p1[..., None, :] + interval[None, None, None, :, None] * plucker_cam[..., None, :3]
-
+    interp_points = p1[..., None, :] + interval[None, None, None, :, None] * plucker_cam[..., None, :3]         # [B, 2, 1024, N, 3]
 
     # get start and end points of epipolar line
-    points = project(interp_points[..., 0], interp_points[..., 1], interp_points[..., 2], intrinsics)[..., :2]
+    points = project(interp_points[..., 0], interp_points[..., 1], interp_points[..., 2], intrinsics)[..., :2]  # [B, 2, 1024, N, 2]
     points = util.normalize_for_grid_sample(points, H, W)
     start = points[..., 0, :]
     end = points[..., -1, :]
@@ -234,9 +237,20 @@ def intersect_line_image_border(line_hom):
 
 
 def plucker_embedding(cam2world, uv, intrinsics):
-    ray_dirs = get_ray_directions(uv, cam2world=cam2world, intrinsics=intrinsics)
-    cam_pos = get_ray_origin(cam2world)
-    cam_pos = cam_pos[..., None, :].expand(list(uv.shape[:-1]) + [3])
+    '''Plucker Coordinate format : (l, m) [6]
+    Args
+        cam2world       : Query-Context Relative Coordinate [B*2, 4, 4]
+        uv              : Pixel Coordinate [B*2, 1024, 2]
+        intrinsics      : 
+
+    Return
+        plucker : [B*2, 1024, 6]
+            plucker[..., :3] : ray dir l
+            plucker[..., 3:] : moment vec m 
+    '''
+    ray_dirs = get_ray_directions(uv, cam2world=cam2world, intrinsics=intrinsics)   # [2B, 1024, 3]
+    cam_pos = get_ray_origin(cam2world) # [2B, 3]
+    cam_pos = cam_pos[..., None, :].expand(list(uv.shape[:-1]) + [3])               # [2B, 1024, 3]
 
     # https://www.euclideanspace.com/maths/geometry/elements/line/plucker/index.htm
     # https://web.cs.iastate.edu/~cs577/handouts/plucker-coordinates.pdf
@@ -351,19 +365,20 @@ def expand_as(x, y):
 
 
 def lift(x, y, z, intrinsics, homogeneous=False):
-    '''
+    ''' Image Coordinate to Camera Coordinate
 
     :param self:
-    :param x: Shape (batch_size, num_points)
+    :param x: Shape [B*2, 1024]
     :param y:
     :param z:
     :param intrinsics:
-    :return:
+    :return
+        [B*2, 1024, 3]
     '''
     fx, fy, cx, cy = parse_intrinsics(intrinsics)
 
-    x_lift = (x - expand_as(cx, x)) / expand_as(fx, x) * z
-    y_lift = (y - expand_as(cy, y)) / expand_as(fy, y) * z
+    x_lift = (x - expand_as(cx, x)) / expand_as(fx, x) * z  # [B*2, 1024]
+    y_lift = (y - expand_as(cy, y)) / expand_as(fy, y) * z  
 
     if homogeneous:
         return torch.stack((x_lift, y_lift, z, torch.ones_like(z).to(x.device)), dim=-1)
@@ -372,14 +387,14 @@ def lift(x, y, z, intrinsics, homogeneous=False):
 
 
 def project(x, y, z, intrinsics, debug=False):
-    '''
+    ''' Carmera Coordinate to Image Coordinate
 
     :param self:
-    :param x: Shape (batch_size, num_points)
+    :param x: [B, 2, 1024, N]
     :param y:
     :param z:
     :param intrinsics:
-    :return:
+    :return: [B, 2, 1024, N, 3]
     '''
     fx, fy, cx, cy = parse_intrinsics(intrinsics)
 
@@ -407,13 +422,21 @@ def project_cam2world(world_coords, cam2world):
 
 
 def world_from_xy_depth(xy, depth, cam2world, intrinsics):
+    '''
+    Args
+        xy              : [B*2, 1024, 2]
+        depth           : [B*2, 1024]
+
+    Return
+        world_coords : [2B, 1024, 3] 
+    '''
     batch_size, *_ = cam2world.shape
 
     x_cam = xy[..., 0]
     y_cam = xy[..., 1]
     z_cam = depth
 
-    pixel_points_cam = lift(x_cam, y_cam, z_cam, intrinsics=intrinsics, homogeneous=True)
+    pixel_points_cam = lift(x_cam, y_cam, z_cam, intrinsics=intrinsics, homogeneous=True)       # [B*2, 1024, 4]
     world_coords = torch.einsum('b...ij,b...kj->b...ki', cam2world, pixel_points_cam)[..., :3]
 
     return world_coords
@@ -424,11 +447,15 @@ def project_point_on_line(projection_point, line_direction, point_on_line):
     return point_on_line + dot[..., None] * line_direction
 
 def get_ray_directions(xy, cam2world, intrinsics):
+    '''
+    xy                      : [B*2, 1024, 2]
+    cam2world, intrinsics   : [B*2, 4, 4]
+    '''
     z_cam = torch.ones(xy.shape[:-1]).to(xy.device)
-    pixel_points = world_from_xy_depth(xy, z_cam, intrinsics=intrinsics, cam2world=cam2world)  # (batch, num_samples, 3)
+    pixel_points = world_from_xy_depth(xy, z_cam, intrinsics=intrinsics, cam2world=cam2world)  # [2B, 1024, 3]
 
     cam_pos = cam2world[..., :3, 3]
-    ray_dirs = pixel_points - cam_pos[..., None, :]  # (batch, num_samples, 3)
+    ray_dirs = pixel_points - cam_pos[..., None, :]  # [2B, 1024, 3] - [2B, 3] = [2B, 1024, 3]
     ray_dirs = F.normalize(ray_dirs, dim=-1)
     return ray_dirs
 

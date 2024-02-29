@@ -9,7 +9,7 @@ from utils import util
 
 import geometry
 from epipolar import project_rays
-from encoder import SpatialEncoder, ImageEncoder, UNetEncoder
+from Encoder import SpatialEncoder, ImageEncoder, UNetEncoder
 from resnet_block_fc import ResnetFC
 import timm
 
@@ -146,13 +146,17 @@ class CrossAttentionRenderer(nn.Module):
 
 
     def get_z(self, input, val=False):
+        """
+        Return
+            z : [B, 512, H/16, W/16], [B, 256, H/8, W/8]
+        """
         # self.normalize_input(input)
-        rgb = input['context']['rgb']
-        intrinsics = input['context']['intrinsics']
-        context = input['context']
+        rgb = input['context']['rgb']                   # [B, 2, H, W, 3]
+        intrinsics = input['context']['intrinsics']     # [B, 2, 4, 4]
+        context = input['context']                      
 
-        cam2world = context['cam2world']
-        rel_cam2world = torch.matmul(torch.inverse(cam2world[:, :1]), cam2world)
+        cam2world = context['cam2world']               
+        rel_cam2world = torch.matmul(torch.inverse(cam2world[:, :1]), cam2world)    # [B, 2, 4, 4]
 
         # Flatten first two dims (batch and number of context)
         rgb = torch.flatten(rgb, 0, 1)
@@ -207,15 +211,15 @@ class CrossAttentionRenderer(nn.Module):
         # context_cam2world : Context cam1 <-> Context cam2
         # query_cam2world : Query -> Context coordinate 1, 2  
         context_cam2world = torch.matmul(torch.inverse(context['cam2world']), context['cam2world'])         # [B, 2, 4, 4]
-        query_cam2world = torch.matmul(torch.inverse(context['cam2world']), query['cam2world'])             # [B, 2, 4, 4]
+        query_cam2world = torch.matmul(torch.inverse(context['cam2world']), query['cam2world'])             # [B, 2, 4, 4]*[B, 1, 4, 4] = [B, 1, 4, 4] [B, 1, 4, 4]
 
         # Compute each context relative to the first view
         context_rel_cam2world = torch.matmul(torch.inverse(context['cam2world'][:, :1]), context['cam2world'])
 
-        lf_coords = geometry.plucker_embedding(torch.flatten(query_cam2world, 0, 1), 
-                                               torch.flatten(query['uv'].expand(-1, query_cam2world.size(1), -1, -1).contiguous(), 0, 1), 
-                                               torch.flatten(query['intrinsics'].expand(-1, query_cam2world.size(1), -1, -1).contiguous(), 0, 1))
-        lf_coords = lf_coords.reshape(b, n_context, n_qry_rays, 6)
+        lf_coords = geometry.plucker_embedding(torch.flatten(query_cam2world, 0, 1),    # [B*2, 4, 4]
+                                               torch.flatten(query['uv'].expand(-1, query_cam2world.size(1), -1, -1).contiguous(), 0, 1),  # [B*2, 1024, 2]
+                                               torch.flatten(query['intrinsics'].expand(-1, query_cam2world.size(1), -1, -1).contiguous(), 0, 1)) # [B*2, 4, 4]
+        lf_coords = lf_coords.reshape(b, n_context, n_qry_rays, 6)      # [B, 2, 1024, 6]
 
         lf_coords.requires_grad_(True)
         out_dict['coords'] = lf_coords.reshape(b*n_context, n_qry_rays, 6)
@@ -223,23 +227,30 @@ class CrossAttentionRenderer(nn.Module):
 
         # Compute epi line
         if self.no_sample:
-            start, end, diff, valid_mask, pixel_val = geometry.get_epipolar_lines_volumetric(lf_coords, query_cam2world, context['intrinsics'], self.H, self.W, self.npoints, debug=debug)
+            start, end, diff, valid_mask, pixel_val = geometry.get_epipolar_lines_volumetric(lf_coords, 
+                                                                                             query_cam2world, 
+                                                                                             context['intrinsics'], 
+                                                                                             self.H, self.W, self.npoints, debug=debug)
         else:
 
             # Prepare arguments for epipolar line computation
             intrinsics_norm = context['intrinsics'].clone()
             # Normalize intrinsics for a 0-1 image
-            intrinsics_norm[:, :, :2, :] = intrinsics_norm[:, :, :2, :] / self.H
+            intrinsics_norm[:, :, :2, :] = intrinsics_norm[:, :, :2, :] / self.H    # [B, 2, 4, 4]
 
             camera_origin = geometry.get_ray_origin(query_cam2world)
-            ray_dir = lf_coords[..., :3]
-            extrinsics = torch.eye(4).to(ray_dir.device)[None, None, :, :].expand(ray_dir.size(0), ray_dir.size(1), -1, -1)
-            camera_origin = camera_origin[:, :, None, :].expand(-1, -1, ray_dir.size(2), -1)
+            ray_dir = lf_coords[..., :3]        # [B, 2, 1024, 3]
+            extrinsics = torch.eye(4).to(ray_dir.device)[None, None, :, :].expand(ray_dir.size(0), ray_dir.size(1), -1, -1) #[B, 2, 4, 4]
+            camera_origin = camera_origin[:, :, None, :].expand(-1, -1, ray_dir.size(2), -1)    # [B, 2, 1024, 3]
 
-            s = camera_origin.size()
+            s = camera_origin.size()    # [B, 2, 1024, 3]
 
             # Compute 2D epipolar line samples for the image
-            output = project_rays(torch.flatten(camera_origin, 0, 1), torch.flatten(ray_dir, 0, 1), torch.flatten(extrinsics, 0, 1), torch.flatten(intrinsics_norm, 0, 1))
+            output = project_rays(torch.flatten(camera_origin, 0, 1),       #[2B, 1024, 3]
+                                  torch.flatten(ray_dir, 0, 1),             #[2B, 1024, 3]
+                                  torch.flatten(extrinsics, 0, 1),          #[2B, 4, 4]
+                                  torch.flatten(intrinsics_norm, 0, 1)      #[2B, 4, 4]
+                                  )     
 
             valid_mask = output['overlaps_image']
             start, end = output['xy_min'], output['xy_max']
@@ -284,7 +295,10 @@ class CrossAttentionRenderer(nn.Module):
         # Find the 3D point correspondence in every other camera view
         if self.n_view == 2 and (not self.no_latent_concat):
             # Find the nearest neighbor latent in the other frame when given 2 views
-            pt, _, _, _ = geometry.get_3d_point_epipolar(lf_coords.flatten(0, 1), pixel_val, context_cam2world.flatten(0, 1), self.H, self.W, context['intrinsics'].flatten(0, 1))
+            pt, _, _, _ = geometry.get_3d_point_epipolar(lf_coords.flatten(0, 1),   # [2B, 1024, 6]
+                                                         pixel_val,                 # [2B, ]
+                                                         context_cam2world.flatten(0, 1), 
+                                                         self.H, self.W, context['intrinsics'].flatten(0, 1))
 
             context_rel_cam2world_view1 = torch.matmul(torch.inverse(context['cam2world'][:, 0:1]), context['cam2world'])
             context_rel_cam2world_view2 = torch.matmul(torch.inverse(context['cam2world'][:, 1:2]), context['cam2world'])

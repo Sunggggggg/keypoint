@@ -79,25 +79,25 @@ class SpatialEncoder(nn.Module):
             x = self.model.bn1(x)
             x = self.model.relu(x)
 
-            latents = [x]
+            latents = [x]                       # [B, C, H, W]
             if self.num_layers > 1:
                 if self.use_first_pool:
                     x = self.model.maxpool(x)
-                x = self.model.layer1(x)
+                x = self.model.layer1(x)        # [B, 64, H/2, W/2]
                 latents.append(x)
             if self.num_layers > 2:
-                x = self.model.layer2(x)
+                x = self.model.layer2(x)        # [B, 128, H/4, W/4]
                 latents.append(x)
             if self.num_layers > 3:
-                x = self.model.layer3(x)
+                x = self.model.layer3(x)        # [B, 256, H/8, W/8]
                 latents.append(x)
             if self.num_layers > 4:
-                x = self.model.layer4(x)
+                x = self.model.layer4(x)        # [B, 512, H/16, W/16]
                 latents.append(x)
 
             # self.latents = latents
             align_corners = None if self.index_interp == "nearest " else True
-            latents = latents[::-1]
+            latents = latents[::-1]             # [512, 256, 128, 64, 3]
             latents_large = latents
 
             self.latent = latents
