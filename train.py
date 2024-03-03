@@ -106,11 +106,11 @@ def train(rank, world_size, args):
 
             optimizer.step()
             
-            tqdm.write(f"[Iter: {total_steps}] Loss: {train_loss.item():.3f}\t ")
-            del train_loss
             if rank == 0:
                 total_steps += 1
-                
+                tqdm.write(f"[Epoch: {epoch}] [Iter: {total_steps}] Loss: {train_loss.item():.3f}\t ")
+            del train_loss
+
     if val_dataloader is not None:
         print("Running validation set...")
         with torch.no_grad():
@@ -156,7 +156,6 @@ def train(rank, world_size, args):
                     if k == "pixel_val":
                         val = torch.cat(outputs, dim=-3)
                     else:
-                        # print(k, [o.size() for o in outputs])
                         val = torch.cat(outputs, dim=-2)
                     model_output_full[k] = val
 
@@ -177,16 +176,7 @@ def train(rank, world_size, args):
                 single_loss = np.mean(np.concatenate([l.reshape(-1).cpu().numpy() for l in loss], axis=0))
 
             if rank == 0:
-                if (not total_steps % 1000):
-                    model_input_full = model_input
-                    rgb_full = model_input['query']['rgb']
-                    cam2world = model_input['query']['cam2world']
-                    cam2world = torch.matmul(torch.inverse(model_input['context']['cam2world']), cam2world)
-                    model_input['query']['intrinsics'] = model_input['query']['intrinsics'][:1]
-                    model_input['context']['intrinsics'] = model_input['context']['intrinsics'][:1]
-                    model_input['context']['cam2world'] = torch.matmul(torch.inverse(model_input['context']['cam2world']), model_input['context']['cam2world'])[:1]
-                    model_input['context']['rgb'] = model_input['context']['rgb'][:1]
-                    z = [zi[:1] for zi in z]
+                model_output_full
         model.train()
     
         if rank == 0:
