@@ -244,8 +244,8 @@ class VolumeAttention(nn.Module):
 
             feat1 = feat1.reshape(B, self.hidden_dim, -1)   # [B, e, hw]
             feat2 = feat2.reshape(B, self.hidden_dim, -1)
-            feat1 += pose_embed1[:, :, None]
-            feat2 += pose_embed2[:, :, None]
+            # feat1 += pose_embed1[:, :, None]
+            # feat2 += pose_embed2[:, :, None]
 
             quries = self.query_embed.expand(B, self.num_query, self.hidden_dim)
             for d in range(self.depth) :
