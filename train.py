@@ -190,7 +190,7 @@ def train(rank, world_size, args):
                     rgbs = model_output_full['rgb'].reshape(args.batch_size, 256, 256, 3) # [B, H, W, 3]
                     for i, rgb in enumerate(rgbs) :
                         rgb8 = to8b(rgb.cpu().numpy())
-                        filename = os.path.join(fig_dir, '{:03d}_{:06:d}_{:02d}.png'.format(epoch, total_steps, i))
+                        filename = os.path.join(fig_dir, f'{epoch}_{total_steps}_{i}.png')
                         imageio.imwrite(filename, rgb8)
             model.train()
     
