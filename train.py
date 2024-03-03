@@ -43,6 +43,7 @@ def train(rank, world_size, args):
         val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, num_workers=4, pin_memory=False)
 
         H, W = train_dataset.uv.shape[:2]
+        print("Image size : ", H, W)
     elif args.dataset_name == 'adic':
         return
 
