@@ -30,13 +30,13 @@ def train(rank, world_size, args):
         train_dataset = RealEstate10k(img_root, pose_root, args.views, args.num_query_views, args.query_sparsity, 
                                     args.augment, args.lpips)
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
-                                drop_last=True, num_workers=8, pin_memory=False, worker_init_fn=worker_init_fn)
+                                drop_last=True, num_workers=1, pin_memory=False, worker_init_fn=worker_init_fn)
 
         # Val
         img_root = os.path.join(args.img_root, 'test')
         pose_root = os.path.join(args.pose_root, 'test.mat')
         val_dataset = RealEstate10k(img_root, pose_root, num_ctxt_views=args.views, num_query_views=1, augment=False)
-        val_dataloader = DataLoader(val_dataset, batch_size=8, shuffle=True, drop_last=True, num_workers=4, pin_memory=False, worker_init_fn=worker_init_fn)
+        val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=True, drop_last=True, num_workers=4, pin_memory=False, worker_init_fn=worker_init_fn)
 
     elif args.dataset_name == 'adic':
         return
@@ -109,7 +109,8 @@ def train(rank, world_size, args):
                 if rank == 0:
                     pbar.update(1)
                     total_steps += 1
-            
+                    tqdm.write(f"[Iter: {total_steps}] MES: {losses['img_loss'].item():.3f}\t LPIPS: {losses['lpips_loss'].item():.3f}\t Depth: {losses['depth_loss'].item():.3f}\t ")
+
         if val_dataloader is not None:
             print("Running validation set...")
             with torch.no_grad():
