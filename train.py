@@ -42,8 +42,6 @@ def train(rank, world_size, args):
         val_dataset = RealEstate10k(img_root=img_root, pose_root=pose_root, num_ctxt_views=args.views, num_query_views=args.num_query_views, augment=False)
         val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, num_workers=4, pin_memory=False)
 
-        H, W = train_dataset.uv.shape[:2]
-        print("Image size : ", H, W)
     elif args.dataset_name == 'adic':
         return
 
@@ -189,7 +187,7 @@ def train(rank, world_size, args):
                     single_loss = np.mean(np.concatenate([l.reshape(-1).cpu().numpy() for l in loss], axis=0))
 
                 if rank == 0:
-                    rgbs = model_output_full['rgb'].reshape(args.batch_size, H, W, 3) # [B, H, W, 3]
+                    rgbs = model_output_full['rgb'].reshape(args.batch_size, 256, 256, 3) # [B, H, W, 3]
                     for i, rgb in enumerate(rgbs) :
                         rgb8 = to8b(rgb.cpu().numpy())
                         filename = os.path.join(fig_dir, '{:03d}_{:06:d}_{:02d}.png'.format(epoch, total_steps, i))
