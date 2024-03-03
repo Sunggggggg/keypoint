@@ -7,7 +7,7 @@ from utils import util
 import geometry
 from epipolar import project_rays
 from resnet_block_fc import ResnetFC
-from models.Render import VolumeAttention
+from models.Custom_encoder import VolumeAttention
 from copy import deepcopy
 
 
