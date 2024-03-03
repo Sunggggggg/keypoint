@@ -30,12 +30,12 @@ def train(rank, world_size, args):
         train_dataset = RealEstate10k(img_root, pose_root, args.views, args.num_query_views, args.query_sparsity, 
                                     args.augment, args.lpips)
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, num_workers=4, pin_memory=False)
-
+        
         # Val
         img_root = os.path.join(args.img_root, 'test')
         pose_root = os.path.join(args.pose_root, 'test.mat')
         val_dataset = RealEstate10k(img_root, pose_root, num_ctxt_views=args.views, num_query_views=1, augment=False)
-        val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=True, drop_last=True, num_workers=4, pin_memory=False)
+        val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, num_workers=4, pin_memory=False)
 
     elif args.dataset_name == 'adic':
         return
@@ -86,6 +86,7 @@ def train(rank, world_size, args):
     
     print("Train start...!")
     for epoch in range(epochs):
+        print(f"[Epoch] {epoch} Load dataset Train dataset : {len(train_dataset)} Test dataset : {len(val_dataset)}")
         for step, (model_input, gt) in enumerate(train_dataloader):
             model_input = util.dict_to_gpu(model_input)
             gt = util.dict_to_gpu(gt)
@@ -104,7 +105,7 @@ def train(rank, world_size, args):
             optimizer.step()
             del train_loss
 
-            tqdm.write(f"[Iter: {total_steps}] MES: {losses['img_loss'].item():.3f}\t LPIPS: {losses['lpips_loss'].item():.3f}\t Depth: {losses['depth_loss'].item():.3f}\t ")
+            print(f"[Iter: {total_steps}] MES: {losses['img_loss'].item():.3f}\t LPIPS: {losses['lpips_loss'].item():.3f}\t Depth: {losses['depth_loss'].item():.3f}\t ")
             if rank == 0:
                 total_steps += 1
                 
