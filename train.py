@@ -106,7 +106,7 @@ def train(rank, world_size, args):
 
             optimizer.step()
             del train_loss
-
+            print(losses)
             print(f"[Iter: {total_steps}] MES: {losses['img_loss'].item():.3f}\t LPIPS: {losses['lpips_loss'].item():.3f}\t Depth: {losses['depth_loss'].item():.3f}\t ")
             if rank == 0:
                 total_steps += 1
