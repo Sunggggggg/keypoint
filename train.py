@@ -122,7 +122,7 @@ def train(rank, world_size, args):
                 tqdm.write(f"[Epoch: {epoch}] [Iter: {total_steps}] Loss: {train_loss.item():.3f}\t ")
             del train_loss
 
-        if val_dataloader is not None and total_steps % 100 == 0:
+        if val_dataloader is not None:
             print("Running validation set...")
             with torch.no_grad():
                 model.eval()
