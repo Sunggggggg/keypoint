@@ -61,7 +61,7 @@ class CrossAttentionRenderer(nn.Module):
 
         self.encoder = VolumeAttention(freeze=True, num_queries=num_queries, hidden_dim=feature_dim, num_head=8, num_layers=4, depth=6)
         self.conv_map = nn.Conv2d(3, 64, kernel_size=7, stride=1, padding=3)
-        self.latent_dim = num_queries + 64
+        self.latent_dim = num_queries*2 + 64  # 256 +256 +64
 
         if self.n_view > 1 and (not self.no_latent_concat):
             self.query_encode_latent = nn.Conv2d(self.latent_dim + 3, self.latent_dim, 1)

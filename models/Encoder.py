@@ -274,3 +274,9 @@ class VolumeAttention(nn.Module):
         path_1 = self.refinenet1(path_2, keypoint_maps[0])
         
         return [path_2, path_1]
+    
+if __name__ == '__main__' :
+    model = VolumeAttention()
+    x = torch.rand((2, 3, 256, 256))
+    y = torch.rand((2, 16))
+    print(model(x, y, 2)[0].shape)
