@@ -33,8 +33,8 @@ def train(rank, world_size, args):
                                 drop_last=True, num_workers=8, pin_memory=False, worker_init_fn=worker_init_fn)
 
         # Val
-        img_root = os.path.join(args.img_root, 'val')
-        pose_root = os.path.join(args.pose_root, 'val.mat')
+        img_root = os.path.join(args.img_root, 'test')
+        pose_root = os.path.join(args.pose_root, 'test.mat')
         val_dataset = RealEstate10k(img_root, pose_root, num_ctxt_views=args.views, num_query_views=1, augment=False)
         val_dataloader = DataLoader(val_dataset, batch_size=8, shuffle=True, drop_last=True, num_workers=4, pin_memory=False, worker_init_fn=worker_init_fn)
 
