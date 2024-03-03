@@ -98,9 +98,6 @@ def train(rank, world_size, args):
             
             optimizer.zero_grad()
             train_loss.backward()
-            
-            if world_size > 1:
-                average_gradients(model)
 
             optimizer.step()
             del train_loss
