@@ -7,7 +7,7 @@ def config_parser():
     parser.add_argument("--expname", type=str)
     parser.add_argument("--config", is_config_file=True)
     # Dataset
-    parser.add_argument("--dataset_name", type=str, default='dtu')
+    parser.add_argument("--dataset_name", type=str, default='realestate')
     parser.add_argument("--img_root", type=str, default='/home/dev4/data/SKY/datasets/data_download/realestate')
     parser.add_argument("--pose_root", type=str, default='/home/dev4/data/SKY/datasets/poses/realestate')
     parser.add_argument("--imgScale_train", type=int, default=1)
