@@ -63,6 +63,16 @@ class CrossAttentionRenderer(nn.Module):
         self.conv_map = nn.Conv2d(3, 64, kernel_size=7, stride=1, padding=3)
         self.latent_dim = num_queries + 64
 
+        if self.n_view > 1 and (not self.no_latent_concat):
+            self.query_encode_latent = nn.Conv2d(self.latent_dim + 3, self.latent_dim, 1)
+            self.query_encode_latent_2 = nn.Conv2d(self.latent_dim, self.latent_dim // 2 , 1)
+            self.latent_dim = self.latent_dim // 2
+            self.update_val_merge = nn.Conv2d(self.latent_dim * 2 + 6, self.latent_dim, 1)
+        elif self.no_latent_concat:
+            self.feature_map = nn.Conv2d(self.latent_dim, self.latent_dim // 2 , 1)
+        else:
+            self.update_val_merge = nn.Conv2d(self.latent_dim + 6, self.latent_dim, 1)
+
         self.num_hidden_units_phi = num_hidden_units_phi
 
         hidden_dim = 128
