@@ -262,10 +262,11 @@ class VolumeAttention(nn.Module):
                 quries = self.norm(refine_query1+refine_query2)
                 quries = self.self_attention_blk[d](quries)
             # 
-            keypoint_map1 = torch.matmul(quries, feat1).reshape(B, self.num_query, h, w)    # [B, Q, e]*[B, e, hw] = [B, Q, hw]
+            keypoint_map1 = torch.matmul(quries, feat1).reshape(B, self.num_query, h, w)    # [B, Q, e]*[B, e, hw] = [B, Q, h, w]
             keypoint_map2 = torch.matmul(quries, feat2).reshape(B, self.num_query, h, w)    
-            keypoint_map = torch.cat([keypoint_map1, keypoint_map2], dim=1)
-            keypoint_maps.append(self.keypoint_embed(keypoint_map))
+            keypoint_map = torch.stack([keypoint_map1, keypoint_map2], dim=1)                 # [B, 2, Q, h, w]
+            keypoint_map = torch.flatten(keypoint_map, 0, 1)                # [2B, Q, H, W]
+            keypoint_maps.append(keypoint_map)
 
         path_4 = self.refinenet4(keypoint_maps[3])
         path_3 = self.refinenet3(path_4, keypoint_maps[2])
