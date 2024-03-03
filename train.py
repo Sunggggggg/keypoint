@@ -27,8 +27,7 @@ def train(rank, world_size, args):
         # Train
         img_root = os.path.join(args.img_root, 'train')
         pose_root = os.path.join(args.pose_root, 'train.mat')
-        train_dataset = RealEstate10k(img_root, pose_root, 
-                                    args.num_ctxt_views, args.num_query_views, args.query_sparsity, 
+        train_dataset = RealEstate10k(img_root, pose_root, args.views, args.num_query_views, args.query_sparsity, 
                                     args.augment, args.lpips)
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
                                 drop_last=True, num_workers=8, pin_memory=False, worker_init_fn=worker_init_fn)

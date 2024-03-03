@@ -10,6 +10,10 @@ def config_parser():
     parser.add_argument("--dataset_name", type=str, default='realestate')
     parser.add_argument("--img_root", type=str, default='/home/dev4/data/SKY/datasets/data_download/realestate')
     parser.add_argument("--pose_root", type=str, default='/home/dev4/data/SKY/datasets/poses/realestate')
+    parser.add_argument("--views", type=int, default=2)
+    parser.add_argument("--num_query_views", type=int, default=1)
+    parser.add_argument("--query_sparsity", type=int, default=192)
+    parser.add_argument("--augment", action='store_true', default=False)
     parser.add_argument("--imgScale_train", type=int, default=1)
     parser.add_argument("--imgScale_test", type=int, default=1)
     # Trainer
@@ -27,7 +31,6 @@ def config_parser():
     parser.add_argument('--no_latent_concat', action='store_true', default=False)
     parser.add_argument('--no_multiview', action='store_true', default=False)
     parser.add_argument('--no_high_freq', action='store_true', default=False)
-    parser.add_argument("--views", type=int, default=2)
     parser.add_argument("--num_queries", type=int, default=100)
     parser.add_argument("--backbone_feature_dim", type=int, default=256)
     

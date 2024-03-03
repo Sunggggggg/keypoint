@@ -1,0 +1,16 @@
+expname = test
+
+dataset_name = realestate
+img_root = /home/dev4/data/SKY/datasets/data_download/realestate
+pose_root = /home/dev4/data/SKY/datasets/poses/realestate
+views = 2
+num_query_views = 1
+augment = True
+imgScale_train = 1
+imgScale_test = 1
+batch_size = 16
+epochs = 8
+
+# 
+num_queries = 100
+backbone_feature_dim = 256
