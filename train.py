@@ -139,7 +139,8 @@ def train(rank, world_size, args):
                     # chunks = nrays // 512 + 1
                     chunks = nrays // 512 + 1
                     # chunks = nrays // 384 + 1
-                    H, W = rgb_full.shape[-2:]
+                    print(rgb_full.shape)
+                    H, W = rgb_full.shape[-3:-1]
 
                     z = model.get_z(model_input)
 
