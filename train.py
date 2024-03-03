@@ -122,7 +122,7 @@ def train(rank, world_size, args):
                 tqdm.write(f"[Epoch: {epoch}] [Iter: {total_steps}] Loss: {train_loss.item():.3f}\t ")
             del train_loss
 
-    #if val_dataloader is not None and total_steps % 100 == 0:
+        if val_dataloader is not None and total_steps % 100 == 0:
             print("Running validation set...")
             with torch.no_grad():
                 model.eval()
@@ -188,10 +188,10 @@ def train(rank, world_size, args):
 
                 if rank == 0:
                     rgbs = model_output_full['rgb'].reshape(args.batch_size, 256, 256, 3) # [B, H, W, 3]
-                    for i, rgb in enumerate(rgbs) :
-                        rgb8 = to8b(rgb.cpu().numpy())
-                        filename = os.path.join(fig_dir, f'{epoch}_{total_steps}_{i}.png')
-                        imageio.imwrite(filename, rgb8)
+                    rgb8 = to8b(rgbs[-1].cpu().numpy())
+                    filename = os.path.join(fig_dir, f'{epoch}_{total_steps}.png')
+                    imageio.imwrite(filename, rgb8)
+                    print("Save Rendered images ", rgb8.shape)
             model.train()
     
         if rank == 0:
