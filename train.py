@@ -10,7 +10,7 @@ from config import config_parser
 from set_multi_gpus import set_ddp, average_gradients
 from dataset import RealEstate10k
 import loss_functions
-from models.Render import CrossAttentionRenderer
+import models
 from collections import defaultdict
 
 def worker_init_fn():
@@ -43,7 +43,7 @@ def train(rank, world_size, args):
         return
 
     # Model
-    model = CrossAttentionRenderer(no_sample=args.no_sample, no_latent_concat=args.no_latent_concat,
+    model = models.CrossAttentionRenderer(no_sample=args.no_sample, no_latent_concat=args.no_latent_concat,
                                     no_multiview=args.no_multiview, no_high_freq= args.no_high_freq, 
                                     n_view=args.views, num_queries=args.num_queries, feature_dim=args.backbone_feature_dim)
     optimizer = torch.optim.Adam(lr=args.lrate, params=model.parameters(), betas=(0.99, 0.999))
