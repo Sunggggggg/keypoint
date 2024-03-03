@@ -588,9 +588,9 @@ class CrossAttentionRenderer(nn.Module):
         rgb = rgb * valid_mask[:, :, None] + 1 * (1 - valid_mask[:, :, None])
         out_dict['valid_mask'] = valid_mask[..., None]
 
-        rgb = rgb.view(b, n_qry, n_qry_rays, 3)
+        rgb = rgb.view(b, n_qry, n_qry_rays, 3) # [B, 1, N, 3]
 
-        out_dict['rgb'] = rgb
+        out_dict['rgb'] = rgb       # [B, ]
 
         # Return the multiview latent for each image (so we can cache computation of multiview encoder)
         out_dict['z'] = z_orig
