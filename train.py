@@ -27,14 +27,16 @@ def train(rank, world_size, args):
         # Train
         img_root = os.path.join(args.img_root, 'train')
         pose_root = os.path.join(args.pose_root, 'train.mat')
-        train_dataset = RealEstate10k(img_root, pose_root, args.views, args.num_query_views, args.query_sparsity, 
-                                    args.augment, args.lpips)
+        print("Train dataset load : ", img_root, pose_root)
+        train_dataset = RealEstate10k(img_root=img_root, pose_root=pose_root, num_ctxt_views=args.views, num_query_views=args.num_query_views, 
+                                      query_sparsity=args.query_sparsity, augment=args.augment, lpips=args.lpips)
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, num_workers=4, pin_memory=False)
         
         # Val
         img_root = os.path.join(args.img_root, 'test')
         pose_root = os.path.join(args.pose_root, 'test.mat')
-        val_dataset = RealEstate10k(img_root, pose_root, num_ctxt_views=args.views, num_query_views=1, augment=False)
+        print("Test dataset load : ", img_root, pose_root)
+        val_dataset = RealEstate10k(img_root=img_root, pose_root=pose_root, num_ctxt_views=args.views, num_query_views=args.num_query_views, augment=False)
         val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, num_workers=4, pin_memory=False)
 
     elif args.dataset_name == 'adic':

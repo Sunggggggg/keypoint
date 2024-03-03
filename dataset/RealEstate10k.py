@@ -120,7 +120,6 @@ class RealEstate10k():
         key = list(data.keys())[0]
         im = data[key]
 
-        print(im.shape)
         H, W = im.shape[:2]
         H, W = 256, 455
         self.H, self.W = H, W
