@@ -249,18 +249,20 @@ class VolumeAttention(nn.Module):
 
             quries = self.query_embed.expand(B, self.num_query, self.hidden_dim)
             for d in range(self.depth) :
+                quries = self.self_attention_blk[d](quries)
+
                 query1, query2 = quries, quries
                 query1 = self.cross_attention_blk[d](query1, feat1.permute(0, 2, 1), feat1.permute(0, 2, 1)) #[B, Q, e]
                 query2 = self.cross_attention_blk[d](query2, feat2.permute(0, 2, 1), feat2.permute(0, 2, 1)) #[B, Q, e]
 
                 # Aggregation
-                matching_score = torch.matmul(query1, query2.transpose(1, 2))     # [B, Q1, Q2]
+                # matching_score = torch.matmul(query1, query2.transpose(1, 2))     # [B, Q1, Q2]
                 
-                refine_query1 = query1 + torch.matmul(matching_score.softmax(dim=2), query2)
-                refine_query2 = query2 + torch.matmul(matching_score.softmax(dim=1).transpose(1,2), query1)
+                # refine_query1 = query1 + torch.matmul(matching_score.softmax(dim=2), query2)
+                # refine_query2 = query2 + torch.matmul(matching_score.softmax(dim=1).transpose(1,2), query1)
 
-                quries = self.norm(refine_query1+refine_query2)
-                quries = self.self_attention_blk[d](quries)
+                quries = self.norm(query1+query2)
+                
             # 
             keypoint_map1 = torch.matmul(quries, feat1).reshape(B, self.num_query, h, w)    # [B, Q, e]*[B, e, hw] = [B, Q, h, w]
             keypoint_map2 = torch.matmul(quries, feat2).reshape(B, self.num_query, h, w)    
