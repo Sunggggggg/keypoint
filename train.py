@@ -188,9 +188,9 @@ def train(rank, world_size, args):
                     single_loss = np.mean(np.concatenate([l.reshape(-1).cpu().numpy() for l in loss], axis=0))
 
                 if rank == 0:
-                    rgbs = model_output_full['rgb'].reshape(args.batch_size, 1, H, W, 3) # [B, 1, HW, 3]
+                    rgbs = model_output_full['rgb'].reshape(args.batch_size, H, W, 3) # [B, H, W, 3]
                     for i, rgb in enumerate(rgbs) :
-                        rgb8 = to8b(rgb[0].cpu().numpy())
+                        rgb8 = to8b(rgb.cpu().numpy())
                         filename = os.path.join(fig_dir, '{:03d}_{:06:d}_{:02d}.png'.format(epoch, total_steps, i))
                         imageio.imwrite(filename, rgb8)
             model.train()
