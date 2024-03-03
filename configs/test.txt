@@ -7,6 +7,7 @@ views = 2
 num_query_views = 1
 augment = True
 lpips = True
+depth = True
 imgScale_train = 1
 imgScale_test = 1
 batch_size = 16
