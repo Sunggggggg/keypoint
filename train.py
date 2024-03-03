@@ -83,6 +83,11 @@ def train(rank, world_size, args):
             attr = getattr(args, arg)
             file.write('{} = {}\n'.format(arg, attr))
 
+    f = os.path.join(output_dir, 'para.txt')
+    with open(f, 'w') as file:
+        for name, param in model.named_parameters():
+            file.write('{} = {}\n'.format(name, param.requires_grad))
+    
     checkpoints_dir = os.path.join(os.path.join('outputs', args.expname), 'checkpoints')
     os.makedirs(checkpoints_dir, exist_ok=True)
     # Loss
