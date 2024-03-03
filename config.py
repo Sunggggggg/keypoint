@@ -14,7 +14,7 @@ def config_parser():
     parser.add_argument("--imgScale_test", type=int, default=1)
     # Trainer
     parser.add_argument("--batch_size", type=int, default=8)
-    parser.add_argument("--num_epochs", type=int, default=8)
+    parser.add_argument("--epochs", type=int, default=8)
     parser.add_argument("--lrate", type=float, default=5e-4)
     # Checkpoint
     parser.add_argument("--checkpoint_path", type=str, default=None)
