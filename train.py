@@ -45,6 +45,7 @@ def train(rank, world_size, args):
                                     no_multiview=args.no_multiview, no_high_freq= args.no_high_freq, 
                                     n_view=args.views, num_queries=args.num_queries, feature_dim=args.backbone_feature_dim)
     optimizer = torch.optim.Adam(lr=args.lrate, params=model.parameters(), betas=(0.99, 0.999))
+    print("Build Model...!")
 
     # Checkpoint
     if args.checkpoint_path is not None :
@@ -83,6 +84,7 @@ def train(rank, world_size, args):
     epochs = args.epochs
     total_steps = 0
     
+    print("Train start...!")
     for epoch in range(epochs):
         for step, (model_input, gt) in enumerate(train_dataloader):
             model_input = util.dict_to_gpu(model_input)
@@ -102,10 +104,10 @@ def train(rank, world_size, args):
             optimizer.step()
             del train_loss
 
+            tqdm.write(f"[Iter: {total_steps}] MES: {losses['img_loss'].item():.3f}\t LPIPS: {losses['lpips_loss'].item():.3f}\t Depth: {losses['depth_loss'].item():.3f}\t ")
             if rank == 0:
                 total_steps += 1
-                tqdm.write(f"[Iter: {total_steps}] MES: {losses['img_loss'].item():.3f}\t LPIPS: {losses['lpips_loss'].item():.3f}\t Depth: {losses['depth_loss'].item():.3f}\t ")
-
+                
     if val_dataloader is not None:
         print("Running validation set...")
         with torch.no_grad():
@@ -119,7 +121,7 @@ def train(rank, world_size, args):
                 model_input_full = model_input
                 rgb_full = model_input['query']['rgb']
                 uv_full = model_input['query']['uv']
-                nrays = uv_full.size(2)
+                nrays = uv_full.size(2)         # 
                 # chunks = nrays // 512 + 1
                 chunks = nrays // 512 + 1
                 # chunks = nrays // 384 + 1
