@@ -43,7 +43,9 @@ def train(rank, world_size, args):
         return
 
     # Model
-    model = models.QueryAttentionRenderer()
+    model = models.CrossAttentionRenderer(no_sample=args.no_sample, no_latent_concat=args.no_latent_concat,
+                                          no_multiview=args.no_multiview, no_high_freq= args.no_high_freq, 
+                                          n_view=args.views, num_queries=args.num_queries, feature_dim=args.backbone_feature_dim)
     optimizer = torch.optim.Adam(lr=args.lrate, params=model.parameters(), betas=(0.99, 0.999))
 
     # Checkpoint
@@ -76,6 +78,7 @@ def train(rank, world_size, args):
             file.write('{} = {}\n'.format(arg, attr))
 
     checkpoints_dir = os.path.join(os.path.join('outputs', args.expname), 'checkpoints')
+    
     # Loss
     loss_fn = val_loss_fn = loss_functions.LFLoss(args.l2_coeff, args.lpips, args.depth)
     # training

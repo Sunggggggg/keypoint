@@ -23,13 +23,12 @@ def config_parser():
     parser.add_argument('--lpips', action='store_true', default=False)
     parser.add_argument('--depth', action='store_true', default=False)
     # Model
-    parser.add_argument("--num_ctxt_views", type=int, default=2)
-    parser.add_argument("--num_query_views", type=int, default=1)
-    parser.add_argument("--query_sparsity", type=int, default=192)
-    parser.add_argument("--augment", action="store_true")
+    parser.add_argument('--no_sample', action='store_true', default=False)
+    parser.add_argument('--no_latent_concat', action='store_true', default=False)
+    parser.add_argument('--no_multiview', action='store_true', default=False)
+    parser.add_argument('--no_high_freq', action='store_true', default=False)
+    parser.add_argument("--views", type=int, default=2)
+    parser.add_argument("--num_queries", type=int, default=100)
+    parser.add_argument("--backbone_feature_dim", type=int, default=256)
     
-    parser.add_argument("--num_query_views", type=int, default=1)
-    parser.add_argument("--num_query_views", type=int, default=1)
-    parser.add_argument("--num_query_views", type=int, default=1)
-
     return parser.parse_args()

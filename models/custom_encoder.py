@@ -1,132 +1,125 @@
-# 0. Make Leanable Queries
-# 1. Build Backbone (ResNet50-Pretraind, Multi Scale)
-# 2. Positional embedding (Camera pose + Patch pose)
-# 3. Accross self-attention 
-# 4. Upsampling CNN(Fusion)
-# 5. Skip Conect
 import torch
 import torch.nn as nn
-from torchvision import models
-from functools import partial
-import math
-from timm.models.layers import PatchEmbed, trunc_normal_
-from timm.models.vision_transformer import Block, _init_vit_weights
-from collections import OrderedDict
+import torchvision 
 
-class VisionTransformerMultiView(nn.Module):
-    def __init__(self, img_size=224, patch_size=16, in_chans=3, num_classes=1000, embed_dim=784, depth=12,
-                 num_heads=12, mlp_ratio=4., qkv_bias=True, representation_size=None, distilled=False,
-                 drop_rate=0., attn_drop_rate=0., drop_path_rate=0., embed_layer=PatchEmbed, norm_layer=None,
-                 act_layer=None, weight_init=''):
-        super().__init__()
-        self.num_classes = num_classes
-        self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
-        self.num_tokens = 2 if distilled else 1
-        norm_layer = norm_layer or partial(nn.LayerNorm, eps=1e-6)
-        act_layer = act_layer or nn.GELU
+class Backbone(nn.Module):
+    def __init__(self, name='resnet50', num_layers=4, pretrained=True, freeze=True, hidden_dim=256) :
+        super(Backbone, self).__init__()
+        # 
+        if name == 'resnet50' and pretrained:
+            weights = torchvision.models.ResNet50_Weights
+            backbone = torchvision.models.resnet50(weights=weights)
+            feat_dim = [2**(i+8) for i in range(num_layers)]
+            
+        if freeze :
+            for name, param in backbone.named_parameters():
+                param.requires_grad_(False)
 
-        self.patch_embed = embed_layer(
-            img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
-        num_patches = self.patch_embed.num_patches
+        self.backbone = backbone
 
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        self.dist_token = nn.Parameter(torch.zeros(1, 1, embed_dim)) if distilled else None
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + self.num_tokens, embed_dim))
-        self.pos_embed_second = nn.Parameter(torch.zeros(1, num_patches + self.num_tokens, embed_dim))
-        self.pos_drop = nn.Dropout(p=drop_rate)
-
-        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
-        self.blocks = nn.Sequential(*[
-            Block(
-                dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, drop=drop_rate,
-                attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer, act_layer=act_layer)
-            for i in range(depth)])
-        self.norm = norm_layer(embed_dim)
-
-        # Representation layer
-        if representation_size and not distilled:
-            self.num_features = representation_size
-            self.pre_logits = nn.Sequential(OrderedDict([
-                ('fc', nn.Linear(embed_dim, representation_size)),
-                ('act', nn.Tanh())
-            ]))
-        else:
-            self.pre_logits = nn.Identity()
-
-        # Classifier head(s)
-        self.pose_embed = nn.Linear(16, embed_dim)
-        self.head = nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity()
-        self.head_dist = None
-        if distilled:
-            self.head_dist = nn.Linear(self.embed_dim, self.num_classes) if num_classes > 0 else nn.Identity()
-
-        self.init_weights(weight_init)
-
-    def init_weights(self, mode=''):
-        assert mode in ('jax', 'jax_nlhb', 'nlhb', '')
-        head_bias = -math.log(self.num_classes) if 'nlhb' in mode else 0.
-        trunc_normal_(self.pos_embed, std=.02)
-        trunc_normal_(self.pos_embed_second, std=.02)
-        if self.dist_token is not None:
-            trunc_normal_(self.dist_token, std=.02)
-        if mode.startswith('jax'):
-            # leave cls token as zeros to match jax impl
-            named_apply(partial(_init_vit_weights, head_bias=head_bias, jax_impl=True), self)
-        else:
-            trunc_normal_(self.cls_token, std=.02)
-            self.apply(_init_vit_weights)
-
-    def _init_weights(self, m):
-        # this fn left here for compat with downstream users
-        _init_vit_weights(m)
-
-    @torch.jit.ignore()
-    def load_pretrained(self, checkpoint_path, prefix=''):
-        _load_weights(self, checkpoint_path, prefix)
-
-    @torch.jit.ignore
-    def no_weight_decay(self):
-        return {'pos_embed', 'cls_token', 'dist_token'}
-
-    def get_classifier(self):
-        if self.dist_token is None:
-            return self.head
-        else:
-            return self.head, self.head_dist
-
-    def reset_classifier(self, num_classes, global_pool=''):
-        self.num_classes = num_classes
-        self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
-        if self.num_tokens == 2:
-            self.head_dist = nn.Linear(self.embed_dim, self.num_classes) if num_classes > 0 else nn.Identity()
-
-    def forward_features(self, x):
-        x = self.patch_embed(x)
-        cls_token = self.cls_token.expand(x.shape[0], -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
-        if self.dist_token is None:
-            x = torch.cat((cls_token, x), dim=1)
-        else:
-            x = torch.cat((cls_token, self.dist_token.expand(x.shape[0], -1, -1), x), dim=1)
-        x = self.pos_drop(x + self.pos_embed)
-
-        print(x.shape)
-        x = self.blocks(x)
-        x = self.norm(x)
-        if self.dist_token is None:
-            return self.pre_logits(x[:, 0])
-        else:
-            return x[:, 0], x[:, 1]
+        # Same feature dim
+        self.branch = nn.Module()
+        self.branch.layer1 = nn.Conv2d(feat_dim[0], hidden_dim, kernel_size=3, stride=1, padding=1, bias=False, groups=1)
+        self.branch.layer2 = nn.Conv2d(feat_dim[1], hidden_dim, kernel_size=3, stride=1, padding=1, bias=False, groups=1)
+        self.branch.layer3 = nn.Conv2d(feat_dim[2], hidden_dim, kernel_size=3, stride=1, padding=1, bias=False, groups=1)
+        self.branch.layer4 = nn.Conv2d(feat_dim[3], hidden_dim, kernel_size=3, stride=1, padding=1, bias=False, groups=1)
 
     def forward(self, x):
-        x = self.forward_features(x)
-        if self.head_dist is not None:
-            x, x_dist = self.head(x[0]), self.head_dist(x[1])  # x must be a tuple
-            if self.training and not torch.jit.is_scripting():
-                return x, x_dist
-            else:
-                return (x + x_dist) / 2
-        else:
-            x = self.head(x)
+        #
+        x = self.backbone.conv1(x)
+        x = self.backbone.bn1(x)
+        x = self.backbone.relu(x)
+
+        # 
+        layer1 = self.backbone.layer1(x)        # 256
+        layer2 = self.backbone.layer2(layer1)   # 512
+        layer3 = self.backbone.layer3(layer2)   # 1024
+        layer4 = self.backbone.layer4(layer3)   # 2048
+        
+        layer1 = self.branch.layer1(layer1)   # hidden_dim
+        layer2 = self.branch.layer2(layer2)   # hidden_dim
+        layer3 = self.branch.layer3(layer3)   # hidden_dim
+        layer4 = self.branch.layer4(layer4)   # hidden_dim
+        
+        return [layer1, layer2, layer3, layer4]
+
+class SelfAttention(nn.Module):
+    def __init__(self, dim=256, num_heads=8, qkv_bias=False, attn_drop=0., proj_drop=0.):
+        super().__init__()
+        assert dim % num_heads == 0, 'dim should be divisible by num_heads'
+        self.num_heads = num_heads
+        head_dim = dim // num_heads
+        self.scale = head_dim ** -0.5
+
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.attn_drop = nn.Dropout(attn_drop)
+        self.proj = nn.Linear(dim, dim)
+        self.proj_drop = nn.Dropout(proj_drop)
+
+    def forward(self, x):
+        B, N, C = x.shape
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv.unbind(0)
+
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+
+        attn = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+        return x
+
+class CrossAttention(nn.Module):
+    def __init__(self, dim=256, num_heads=8, qkv_bias=False, attn_drop=0., proj_drop=0.):
+        super().__init__()
+        assert dim % num_heads == 0, 'dim should be divisible by num_heads'
+        self.num_heads = num_heads
+        head_dim = dim // num_heads
+        self.scale = head_dim ** -0.5
+
+        self.norm = nn.LayerNorm(dim)
+        self.q = nn.Linear(dim, dim, bias=qkv_bias)
+        self.k = nn.Linear(dim, dim, bias=qkv_bias)
+        self.v = nn.Linear(dim, dim, bias=qkv_bias)
+        self.attn_drop = nn.Dropout(attn_drop)
+        self.proj = nn.Linear(dim, dim)
+        self.proj_drop = nn.Dropout(proj_drop)
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        nn.init.xavier_uniform_(self.q.weight)
+        nn.init.xavier_uniform_(self.k.weight)
+        nn.init.xavier_uniform_(self.v.weight)
+        nn.init.xavier_uniform_(self.proj.weight)
+        if self.k.bias is not None:
+            nn.init.xavier_normal_(self.k.bias)
+        if self.v.bias is not None:
+            nn.init.xavier_normal_(self.v.bias)
+        if self.proj.bias is not None:
+            nn.init.constant_(self.proj.bias, 0.)
+
+    def forward(self, x_q, x_k, x_v):
+        B, N_q, C = x_q.shape 
+        _, N_kv, C = x_k.shape
+        _, N_kv, C = x_v.shape
+        # 
+        
+        # Multi-head cross attetnion
+        # b, h, n, d
+        q = self.q(self.norm(x_q)).reshape(B, N_q, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
+        k = self.k(self.norm(x_k)).reshape(B, N_kv, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
+        v = self.v(self.norm(x_v)).reshape(B, N_kv, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
+
+        # [b, h, n, d] * [b, h, d, m] -> [b, h, n, m]
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+        attn = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+
+        x = (attn @ v).transpose(1, 2).reshape(B, N_q, C)
+        x = self.proj(x)
+        x = self.proj_drop(x)
         return x
 
 class ResidualConvUnit_custom(nn.Module):
@@ -196,78 +189,87 @@ class FeatureFusionBlock_custom(nn.Module):
 
         return output
 
-class Backbone(nn.Module):
-    def __init__(self, name='resnet50', pretrained=True, freeze=True) :
-        super(Backbone, self).__init__()
-        # 
-        if name == 'resnet50' and pretrained:
-            weights = models.ResNet50_Weights
-            backbone = models.resnet50(weights=weights)
-            
+class VolumeAttention(nn.Module):
+    def __init__(self, freeze=True, num_queries=100, hidden_dim=256, num_head=8, num_layers=4, depth=6):
+        super(VolumeAttention, self).__init__()
+        self.depth = depth
+        self.num_layers = num_layers
+        self.num_query = num_queries
+        self.hidden_dim = hidden_dim
+        
+        # Backbone
+        self.backbone = Backbone(pretrained=True, freeze=True, hidden_dim=hidden_dim, num_layers=num_layers)
         if freeze :
-            for name, param in backbone.named_parameters():
+            for name, param in self.backbone.named_parameters():
                 param.requires_grad_(False)
-
-        self.backbone = backbone
-
-    def forward(self, x):
         #
-        x = self.backbone.conv1(x)
-        x = self.backbone.bn1(x)
-        x = self.backbone.relu(x)
+        self.query_embed = nn.Parameter(torch.rand(num_queries, hidden_dim), requires_grad=True)
+        self.cross_attention_blk = nn.ModuleList([
+            CrossAttention(dim=hidden_dim, num_heads=num_head) for _ in range(depth)])
+        self.self_attention_blk = nn.ModuleList([
+            SelfAttention(dim=hidden_dim, num_heads=num_head) for _ in range(depth)])
+        self.pose_embed = nn.Linear(4*4, hidden_dim)
 
         # 
-        layer1 = self.backbone.layer1(x)        # 256
-        layer2 = self.backbone.layer2(layer1)   # 512
-        layer3 = self.backbone.layer3(layer2)   # 1024
-        layer4 = self.backbone.layer4(layer3)   # 2048
+        self.norm = nn.LayerNorm(hidden_dim)
+        self.keypoint_embed = nn.Sequential(
+            nn.Conv2d(2*num_queries, num_queries, kernel_size=1, stride=1, padding=0),
+            nn.ReLU(True))
         
-        return [layer1, layer2, layer3, layer4]
+        #
+        self.refinenet1 = FeatureFusionBlock_custom(num_queries, nn.ReLU(False), deconv=False, bn=False, expand=False, align_corners=True)
+        self.refinenet2 = FeatureFusionBlock_custom(num_queries, nn.ReLU(False), deconv=False, bn=False, expand=False, align_corners=True)
+        self.refinenet3 = FeatureFusionBlock_custom(num_queries, nn.ReLU(False), deconv=False, bn=False, expand=False, align_corners=True)
+        self.refinenet4 = FeatureFusionBlock_custom(num_queries, nn.ReLU(False), deconv=False, bn=False, expand=False, align_corners=True)
 
-class MultiviewQueryEncoder(nn.Module):
-    def __init__(self, num_queries, hidden_dim, layer=4,
-                 img_size=256, patch_size=16, features=256, depth=12, num_heads=8
-                 ) :
-        super(MultiviewQueryEncoder, self).__init__()
-        # 0. Make Leanable Queries
-        self.query_embed = nn.Embedding(num_queries, hidden_dim)
+    def forward(self, x, rel_transform, nviews):
+        """
+        x : [2B, 3, H, W]
+        """
+        s = x.shape
+        x = x.reshape(s[0]//nviews, nviews, *s[1:])
+        img1, img2 = x[:, 0], x[:, 1]       # [B, 3, H, W]
 
-        # 1. Build Backbone (ResNet50-Pretraind, Multi Scale)
-        backbone = VisionTransformerMultiView(img_size=img_size, patch_size=patch_size, in_chans=3, 
-                                             embed_dim=features, depth=depth, num_heads=num_heads)
-        # 1.1 branch
-        feat_dim = [2**(i+8) for i in range(layer)]
+        # 
+        pose_embed = self.pose_embed(rel_transform)         # [2B, hidden_dim]
+        pose_embed = pose_embed.reshape(s[0]//nviews, nviews, -1)
+        pose_embed1, pose_embed2 = pose_embed[:, 0], pose_embed[:, 1]   # [B, hidden_dim]
+
+        # 
+        keypoint_maps = []
+        feats1, feats2 = self.backbone(img1), self.backbone(img2)   # [layer1, layer2, layer3, layer4]
+        for l in range(self.num_layers):
+            feat1, feat2 = feats1[l], feats2[l]     # [B, hidden_dim, H, W]
+            B, _, h, w = feat1.shape 
+
+            feat1 = feat1.reshape(B, self.hidden_dim, -1)   # [B, e, hw]
+            feat2 = feat2.reshape(B, self.hidden_dim, -1)
+            feat1 += pose_embed1[:, :, None]
+            feat2 += pose_embed2[:, :, None]
+
+            quries = self.query_embed.expand(B, self.num_query, self.hidden_dim)
+            for d in range(self.depth) :
+                query1, query2 = quries, quries
+                query1 = self.cross_attention_blk[d](query1, feat1.permute(0, 2, 1), feat1.permute(0, 2, 1)) #[B, Q, e]
+                query2 = self.cross_attention_blk[d](query2, feat2.permute(0, 2, 1), feat2.permute(0, 2, 1)) #[B, Q, e]
+
+                # Aggregation
+                matching_score = torch.matmul(query1, query2.transpose(1, 2))     # [B, Q1, Q2]
+                
+                refine_query1 = query1 + torch.matmul(matching_score.softmax(dim=2), query2)
+                refine_query2 = query2 + torch.matmul(matching_score.softmax(dim=1).transpose(1,2), query1)
+
+                quries = self.norm(refine_query1+refine_query2)
+                quries = self.self_attention_blk[d](quries)
+            # 
+            keypoint_map1 = torch.matmul(quries, feat1).reshape(B, self.num_query, h, w)    # [B, Q, e]*[B, e, hw] = [B, Q, hw]
+            keypoint_map2 = torch.matmul(quries, feat2).reshape(B, self.num_query, h, w)    
+            keypoint_map = torch.cat([keypoint_map1, keypoint_map2], dim=1)
+            keypoint_maps.append(self.keypoint_embed(keypoint_map))
+
+        path_4 = self.refinenet4(keypoint_maps[3])
+        path_3 = self.refinenet3(path_4, keypoint_maps[2])
+        path_2 = self.refinenet2(path_3, keypoint_maps[1])
+        path_1 = self.refinenet1(path_2, keypoint_maps[0])
         
-        self.branch = nn.Module()
-        self.branch.layer1 = nn.Conv2d(feat_dim[0], features, kernel_size=3, stride=1, padding=1, bias=False, groups=1)
-        self.branch.layer2 = nn.Conv2d(feat_dim[1], features, kernel_size=3, stride=1, padding=1, bias=False, groups=1)
-        self.branch.layer3 = nn.Conv2d(feat_dim[2], features, kernel_size=3, stride=1, padding=1, bias=False, groups=1)
-        self.branch.layer4 = nn.Conv2d(feat_dim[3], features, kernel_size=3, stride=1, padding=1, bias=False, groups=1)
-
-        # 1.2 Fusion 
-        self.branch.refinenet1 = FeatureFusionBlock_custom(features, nn.ReLU(False), deconv=False, bn=False, expand=False, align_corners=True)
-        self.branch.refinenet2 = FeatureFusionBlock_custom(features, nn.ReLU(False), deconv=False, bn=False, expand=False, align_corners=True)
-        self.branch.refinenet3 = FeatureFusionBlock_custom(features, nn.ReLU(False), deconv=False, bn=False, expand=False, align_corners=True)
-        self.branch.refinenet4 = FeatureFusionBlock_custom(features, nn.ReLU(False), deconv=False, bn=False, expand=False, align_corners=True)
-        # 
-
-    def forward(self, x):
-        layer_1, layer_2, layer_3, layer_4 = self.backbone(x)
-
-
-        # 
-        layer_1_rn = self.branch.layer1(layer_1)
-        layer_2_rn = self.branch.layer2(layer_2)
-        layer_3_rn = self.branch.layer3(layer_3)
-        layer_4_rn = self.branch.layer4(layer_4)
-
-        path_4 = self.branch.refinenet4(layer_4_rn)
-        path_3 = self.branch.refinenet3(path_4, layer_3_rn)
-        path_2 = self.branch.refinenet2(path_3, layer_2_rn)
-        path_1 = self.branch.refinenet1(path_2, layer_1_rn)
-
         return [path_2, path_1]
-
-x = torch.rand((1, 3, 224, 224))
-m = VisionTransformerMultiView(embed_dim=256, depth=12, num_heads=8)
-print(m(x).shape)

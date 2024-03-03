@@ -3,16 +3,11 @@ import time
 import torch
 import torch.nn as nn
 import numpy as np
-from midas import dpt_depth, midas_net, midas_net_custom
-
 from utils import util
-
 import geometry
 from epipolar import project_rays
-from Encoder import SpatialEncoder, ImageEncoder, UNetEncoder
 from resnet_block_fc import ResnetFC
-import timm
-
+from models.Render import VolumeAttention
 from copy import deepcopy
 
 
@@ -40,7 +35,11 @@ def encode_relative_point(ray, transform):
 
 
 class CrossAttentionRenderer(nn.Module):
-    def __init__(self, no_sample=False, no_latent_concat=False, no_multiview=False, no_high_freq=False, model="midas_vit", uv=None, repeat_attention=True, n_view=1, npoints=64, num_hidden_units_phi=128):
+    def __init__(self, no_sample=False, no_latent_concat=False, 
+                 no_multiview=False, no_high_freq=False, 
+                 uv=None, repeat_attention=True, n_view=1, npoints=64, num_hidden_units_phi=128,
+                 num_queries=100, feature_dim=256,
+                 ):
         super().__init__()
 
         self.n_view = n_view
@@ -60,55 +59,10 @@ class CrossAttentionRenderer(nn.Module):
         self.no_multiview = no_multiview
         self.no_high_freq = no_high_freq
 
-        if model == "resnet":
-            self.encoder = SpatialEncoder(use_first_pool=False, num_layers=4)
-            self.latent_dim = 512
-        elif model == 'midas':
-            self.encoder = midas_net_custom.MidasNet_small(
-                path=None,
-                features=64,
-                backbone="efficientnet_lite3",
-                exportable=True,
-                non_negative=True,
-                blocks={'expand': True}
-            )
-            checkpoint = (
-                    "https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21_small-70d6b9c8.pt"
-            )
-            state_dict = torch.hub.load_state_dict_from_url(
-                checkpoint, map_location=torch.device('cpu'), progress=True, check_hash=True
-            )
-            self.encoder.load_state_dict(state_dict)
-            self.latent_dim = 512
-        elif model == 'midas_vit':
-            self.encoder = dpt_depth.DPTDepthModel(
-                path=None,
-                backbone="vitb_rn50_384",
-                non_negative=True,
-            )
-            checkpoint = (
-                "https://github.com/intel-isl/DPT/releases/download/1_0/dpt_hybrid-midas-501f0c75.pt"
-            )
+        self.encoder = VolumeAttention(freeze=True, num_queries=num_queries, hidden_dim=feature_dim, num_head=8, num_layers=4, depth=6)
+        self.conv_map = nn.Conv2d(3, 64, kernel_size=7, stride=1, padding=3)
+        self.latent_dim = num_queries
 
-            self.encoder.pretrained.model.patch_embed.backbone.stem.conv = timm.models.layers.std_conv.StdConv2dSame(3, 64, kernel_size=(7, 7), stride=(2, 2), bias=False)
-            self.latent_dim = 512 + 64
-
-            self.conv_map = nn.Conv2d(3, 64, kernel_size=7, stride=1, padding=3)
-        else:
-            self.encoder = UNetEncoder()
-            self.latent_dim = 32
-
-        if self.n_view > 1 and (not self.no_latent_concat):
-            self.query_encode_latent = nn.Conv2d(self.latent_dim + 3, self.latent_dim, 1)
-            self.query_encode_latent_2 = nn.Conv2d(self.latent_dim, self.latent_dim // 2 , 1)
-            self.latent_dim = self.latent_dim // 2
-            self.update_val_merge = nn.Conv2d(self.latent_dim * 2 + 6, self.latent_dim, 1)
-        elif self.no_latent_concat:
-            self.feature_map = nn.Conv2d(self.latent_dim, self.latent_dim // 2 , 1)
-        else:
-            self.update_val_merge = nn.Conv2d(self.latent_dim + 6, self.latent_dim, 1)
-
-        self.model = model
         self.num_hidden_units_phi = num_hidden_units_phi
 
         hidden_dim = 128
@@ -121,7 +75,6 @@ class CrossAttentionRenderer(nn.Module):
             self.latent_value = nn.Conv2d(self.latent_dim, self.latent_dim, 1)
             self.key_map = nn.Conv2d(self.latent_dim, hidden_dim, 1)
             self.key_map_2 = nn.Conv2d(hidden_dim, hidden_dim, 1)
-
 
         self.query_embed = nn.Conv2d(16, hidden_dim, 1)
         self.query_embed_2 = nn.Conv2d(hidden_dim, hidden_dim, 1)
@@ -165,13 +118,10 @@ class CrossAttentionRenderer(nn.Module):
         rgb = rgb.permute(0, -1, 1, 2) # (b*n_ctxt, ch, H, W)
         self.H, self.W = rgb.shape[-2], rgb.shape[-1]
 
-        if self.model == "resnet":
-            rgb = (rgb + 1) / 2.
-            rgb = util.normalize_imagenet(rgb)
-            rgb = torch.cat([rgb], dim=1)
-        elif self.model == "midas" or self.model == "midas_vit":
-            rgb = (rgb + 1) / 2
-            rgb = util.normalize_imagenet(rgb)
+        rgb = (rgb + 1) / 2.
+        rgb = util.normalize_imagenet(rgb)
+        rgb = torch.cat([rgb], dim=1)
+        
 
         if self.no_multiview:
             cam2world_encode = rel_cam2world.view(-1, 16)
@@ -180,14 +130,8 @@ class CrossAttentionRenderer(nn.Module):
             cam2world_encode = rel_cam2world.view(-1, 16)
 
         z = self.encoder.forward(rgb, cam2world_encode, self.n_view) # (b*n_ctxt, self.latent_dim, H, W)
-
-        if self.model == "midas" or self.model == "midas_vit":
-            z_conv = self.conv_map(rgb)
-
-            if self.no_high_freq:
-                z_conv = torch.zeros_like(z_conv)
-
-            z = z + [z_conv]
+        z_conv = self.conv_map(rgb)
+        z = z + [z_conv]
 
         return z
 
