@@ -42,6 +42,7 @@ def train(rank, world_size, args):
         val_dataset = RealEstate10k(img_root=img_root, pose_root=pose_root, num_ctxt_views=args.views, num_query_views=args.num_query_views, augment=False)
         val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, num_workers=4, pin_memory=False)
 
+        H, W = train_dataset.uv.shape[:2]
     elif args.dataset_name == 'adic':
         return
 
@@ -139,8 +140,6 @@ def train(rank, world_size, args):
                     # chunks = nrays // 512 + 1
                     chunks = nrays // 512 + 1
                     # chunks = nrays // 384 + 1
-                    print(rgb_full.shape)
-                    H, W = rgb_full.shape[-3:-1]
 
                     z = model.get_z(model_input)
 
