@@ -30,3 +30,12 @@ def set_ddp(rank, world_size):
                             world_size=world_size)
     setup_for_distributed(rank==0)
     torch.cuda.set_device(rank)
+
+def average_gradients(model):
+    """Averages gradients across workers"""
+    size = float(dist.get_world_size())
+
+    for param in model.parameters():
+        if param.grad is not None:
+            dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
+            param.grad.data /= size

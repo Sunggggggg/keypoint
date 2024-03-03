@@ -18,13 +18,16 @@ def config_parser():
     parser.add_argument("--lrate", type=float, default=5e-4)
     # Checkpoint
     parser.add_argument("--checkpoint_path", type=str, default=None)
+    # Loss
+    parser.add_argument('--l2_coeff', type=float, default=0.05)
+    parser.add_argument('--lpips', action='store_true', default=False)
+    parser.add_argument('--depth', action='store_true', default=False)
     # Model
     parser.add_argument("--num_ctxt_views", type=int, default=2)
     parser.add_argument("--num_query_views", type=int, default=1)
     parser.add_argument("--query_sparsity", type=int, default=192)
     parser.add_argument("--augment", action="store_true")
-    parser.add_argument("--lpips", action="store_true")
-
+    
     parser.add_argument("--num_query_views", type=int, default=1)
     parser.add_argument("--num_query_views", type=int, default=1)
     parser.add_argument("--num_query_views", type=int, default=1)

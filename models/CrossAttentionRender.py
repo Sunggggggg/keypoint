@@ -512,9 +512,9 @@ class CrossAttentionRenderer(nn.Module):
         cam_rays = geometry.get_ray_directions_cam(pixel_val, context['intrinsics'].flatten(0, 1), self.H, self.W)
 
         # Ray direction of the query ray to be rendered 
-        ray_dir = lf_coords[..., :3].flatten(0, 1)
-        ray_dir = ray_dir[:, :, None]
-        ray_dir = ray_dir.expand(-1, -1, cam_rays.size(2), -1)
+        ray_dir = lf_coords[..., :3].flatten(0, 1)      # [2B, 1024, 3]
+        ray_dir = ray_dir[:, :, None]                   # [2B, 1024, 1, 3]
+        ray_dir = ray_dir.expand(-1, -1, cam_rays.size(2), -1) # [2B, 1024, 1, 3]
 
         # 3D coordinate of each epipolar point in 3D
         # depth, _, _ = geometry.get_depth_epipolar(lf_coords.flatten(0, 1), pixel_val, query_cam2world, self.H, self.W, context['intrinsics'].flatten(0, 1))
