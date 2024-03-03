@@ -1,2 +1,2 @@
-from .Custom_encoder import VolumeAttention
+from .Encoder import VolumeAttention
 from .Render import CrossAttentionRenderer
