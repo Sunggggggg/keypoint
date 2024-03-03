@@ -84,7 +84,7 @@ def train(rank, world_size, args):
             file.write('{} = {}\n'.format(arg, attr))
 
     checkpoints_dir = os.path.join(os.path.join('outputs', args.expname), 'checkpoints')
-    
+    os.makedirs(checkpoints_dir, exist_ok=True)
     # Loss
     loss_fn = val_loss_fn = loss_functions.LFLoss(args.l2_coeff, args.lpips, args.depth)
     # training
