@@ -252,6 +252,7 @@ class VolumeAttention(nn.Module):
 
             quries = self.query_embed.expand(B, self.num_query, self.hidden_dim)
             for d in range(self.depth) :
+                quries = self.norm(quries)
                 quries = self.self_attention_blk[d](quries)
 
                 query1, query2 = quries, quries
@@ -264,7 +265,7 @@ class VolumeAttention(nn.Module):
                 refine_query1 = query1 + torch.matmul(matching_score.softmax(dim=2), query2)
                 refine_query2 = query2 + torch.matmul(matching_score.softmax(dim=1).transpose(1,2), query1)
 
-                quries = (quries + refine_query1 + refine_query2).softmax(dim=2)
+                quries = quries + refine_query1 + refine_query2
                 
             # 
             keypoint_map1 = torch.matmul(quries, feat1).reshape(B, self.num_query, h, w)    # [B, Q, e]*[B, e, hw] = [B, Q, h, w]
