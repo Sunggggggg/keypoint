@@ -212,6 +212,7 @@ class VolumeAttention(nn.Module):
 
         # 
         self.norm = nn.LayerNorm(hidden_dim)
+        self.softmax = nn.Softmax(hidden_dim)
         self.keypoint_embed = nn.Sequential(
             nn.Conv2d(2*num_queries, num_queries, kernel_size=1, stride=1, padding=0),
             nn.ReLU(True))
@@ -256,12 +257,12 @@ class VolumeAttention(nn.Module):
                 query2 = self.cross_attention_blk[d](query2, feat2.permute(0, 2, 1), feat2.permute(0, 2, 1)) #[B, Q, e]
 
                 # Aggregation
-                # matching_score = torch.matmul(query1, query2.transpose(1, 2))     # [B, Q1, Q2]
+                matching_score = torch.matmul(query1, query2.transpose(1, 2))     # [B, Q1, Q2]
                 
-                # refine_query1 = query1 + torch.matmul(matching_score.softmax(dim=2), query2)
-                # refine_query2 = query2 + torch.matmul(matching_score.softmax(dim=1).transpose(1,2), query1)
+                refine_query1 = query1 + torch.matmul(matching_score.softmax(dim=2), query2)
+                refine_query2 = query2 + torch.matmul(matching_score.softmax(dim=1).transpose(1,2), query1)
 
-                quries = self.norm(query1+query2)
+                quries = self.softmax(quries + refine_query1 + refine_query2)
                 
             # 
             keypoint_map1 = torch.matmul(quries, feat1).reshape(B, self.num_query, h, w)    # [B, Q, e]*[B, e, hw] = [B, Q, h, w]
