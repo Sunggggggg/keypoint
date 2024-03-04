@@ -196,6 +196,11 @@ def train(rank, world_size, args):
                     rgb8 = to8b(rgbs[-1].cpu().numpy())
                     filename = os.path.join(fig_dir, f'{epoch}_{total_steps}_{single_loss:.4f}.png')
                     imageio.imwrite(filename, rgb8)
+
+                    rgb_full = rgb_full.reshape(args.batch_size, 256, 256, 3)
+                    rgb8 = to8b(rgb_full[-1].cpu().numpy())
+                    filename = os.path.join(fig_dir, f'{epoch}_{total_steps}_{single_loss:.4f}_GT.png')
+                    imageio.imwrite(filename, rgb8)
                     print("Save Rendered images ", rgb8.shape)
             model.train()
     
