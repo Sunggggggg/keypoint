@@ -8,6 +8,7 @@ import geometry
 from epipolar import project_rays
 from resnet_block_fc import ResnetFC
 from .Encoder import VolumeAttention
+from .transformer_decoder import MultiScaleQueryTransformerDecoder
 from copy import deepcopy
 
 
@@ -59,7 +60,10 @@ class CrossAttentionRenderer(nn.Module):
         self.no_multiview = no_multiview
         self.no_high_freq = no_high_freq
 
-        self.encoder = VolumeAttention(freeze=True, num_queries=num_queries, hidden_dim=feature_dim, num_head=8, num_layers=4, depth=6)
+        #self.encoder = VolumeAttention(freeze=True, num_queries=num_queries, hidden_dim=feature_dim, num_head=8, num_layers=4, depth=6)
+        self.encoder = MultiScaleQueryTransformerDecoder(num_layers=3,
+                                                         num_queries=num_queries,
+                                                         hidden_dim=feature_dim, nheads=8, depth=6)
         self.conv_map = nn.Conv2d(3, 64, kernel_size=7, stride=1, padding=3)
         self.latent_dim = num_queries*2 + 64  # 256 +256 +64
 
