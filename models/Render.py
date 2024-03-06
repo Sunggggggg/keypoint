@@ -162,7 +162,7 @@ class CrossAttentionRenderer(nn.Module):
         # Get img features
         if z is None:
             z, reg_loss = self.get_z(input)
-            z = z_orig
+            z_orig = z 
             out_dict['reg_loss'] = reg_loss
         else:
             z_orig = z
