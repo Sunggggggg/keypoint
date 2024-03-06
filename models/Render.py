@@ -165,6 +165,7 @@ class CrossAttentionRenderer(nn.Module):
             z = z_output_dict['z']
             out_dict['reg_loss'] = z_output_dict['reg_loss']
             z_orig = z 
+            print(z, out_dict['reg_loss'])
         else:
             z_orig = z
 
