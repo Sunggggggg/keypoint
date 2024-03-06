@@ -149,7 +149,7 @@ class CrossAttentionRenderer(nn.Module):
 
         return z, reg_loss
 
-    def forward(self, input, z=None, reg_loss=None, val=False, debug=False):
+    def forward(self, input, z=None, val=False, debug=False):
 
         out_dict = {}
         input = deepcopy(input)
@@ -600,6 +600,6 @@ class CrossAttentionRenderer(nn.Module):
         # Return the multiview latent for each image (so we can cache computation of multiview encoder)
         out_dict['z'] = z_orig
 
-        return out_dict, reg_loss
+        return out_dict
 
 

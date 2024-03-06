@@ -91,7 +91,7 @@ def train(rank, world_size, args):
     checkpoints_dir = os.path.join(os.path.join('outputs', args.expname), 'checkpoints')
     os.makedirs(checkpoints_dir, exist_ok=True)
     # Loss
-    loss_fn = val_loss_fn = loss_functions.LFLoss(args.l2_coeff, args.lpips, args.depth, reg=True)
+    loss_fn = val_loss_fn = loss_functions.LFLoss(args.l2_coeff, args.lpips, args.depth)
     # training
     epochs = args.epochs
     total_steps = 0
@@ -104,8 +104,8 @@ def train(rank, world_size, args):
             model_input = util.dict_to_gpu(model_input)
             gt = util.dict_to_gpu(gt)
 
-            model_output, reg_loss = model(model_input)
-            losses, loss_summaries = loss_fn(model_output, gt, model=model, reg_loss=reg_loss)
+            model_output = model(model_input)
+            losses, loss_summaries = loss_fn(model_output, gt, model=model)
 
             train_loss = 0.
             for loss_name, loss in losses.items():
@@ -145,7 +145,7 @@ def train(rank, world_size, args):
                         chunks = nrays // 512 + 1
                         # chunks = nrays // 384 + 1
 
-                        z, reg_loss = model.get_z(model_input)
+                        z = model.get_z(model_input)
 
                         rgb_chunks = torch.chunk(rgb_full, chunks, dim=2)
                         uv_chunks = torch.chunk(uv_full, chunks, dim=2)
@@ -155,7 +155,7 @@ def train(rank, world_size, args):
                         for rgb_chunk, uv_chunk in zip(rgb_chunks, uv_chunks):
                             model_input['query']['rgb'] = rgb_chunk
                             model_input['query']['uv'] = uv_chunk
-                            model_output, reg_loss = model(model_input, z=z, reg_loss=reg_loss, val=True)
+                            model_output = model(model_input, z=z, val=True)
                             del model_output['z']
                             del model_output['coords']
                             del model_output['at_wts']
