@@ -147,7 +147,7 @@ class CrossAttentionRenderer(nn.Module):
         z_conv = self.conv_map(rgb)
         z = z + [z_conv]
 
-        return z, reg_loss
+        return {'z':z, 'reg_loss':reg_loss}
 
     def forward(self, input, z=None, val=False, debug=False):
 
@@ -161,9 +161,10 @@ class CrossAttentionRenderer(nn.Module):
 
         # Get img features
         if z is None:
-            z, reg_loss = self.get_z(input)
+            z_output_dict = self.get_z(input)
+            z = z_output_dict['z']
+            out_dict['reg_loss'] = z_output_dict['reg_loss']
             z_orig = z 
-            out_dict['reg_loss'] = reg_loss
         else:
             z_orig = z
 
