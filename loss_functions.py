@@ -81,7 +81,7 @@ def image_loss(model_out, gt, mask=None):
 
 
 class LFLoss():
-    def __init__(self, l2_weight=1e-3, lpips=False, depth=False, reg=False):
+    def __init__(self, l2_weight=1e-3, lpips=False, depth=False, reg=True):
         self.l2_weight = l2_weight
         self.reg = reg
         self.lpips = lpips
