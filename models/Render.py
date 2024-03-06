@@ -162,10 +162,8 @@ class CrossAttentionRenderer(nn.Module):
         # Get img features
         if z is None:
             z, reg_loss = self.get_z(input)
-            out_dict['reg_loss'] = reg_loss
             z_orig = z 
         else:
-            out_dict['reg_loss'] = reg_loss
             z_orig = z
 
         # Get relative coordinates of the query and context ray in each context camera coordinate system
@@ -602,6 +600,6 @@ class CrossAttentionRenderer(nn.Module):
         # Return the multiview latent for each image (so we can cache computation of multiview encoder)
         out_dict['z'] = z_orig
 
-        return out_dict
+        return out_dict, reg_loss
 
 

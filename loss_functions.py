@@ -81,7 +81,7 @@ def image_loss(model_out, gt, mask=None):
 
 
 class LFLoss():
-    def __init__(self, l2_weight=1e-3, lpips=False, depth=False, reg=True):
+    def __init__(self, l2_weight=1e-3, lpips=False, depth=False, reg=False):
         self.l2_weight = l2_weight
         self.reg = reg
         self.lpips = lpips
@@ -95,7 +95,7 @@ class LFLoss():
         self.avg = nn.AdaptiveAvgPool2d((2, 2))
         self.upsample = nn.Upsample((32, 32), mode='bilinear')
 
-    def __call__(self, model_out, gt, model=None, val=False):
+    def __call__(self, model_out, gt, reg_loss=None, model=None, val=False):
         loss_dict = {}
         loss_dict['img_loss'] = image_loss(model_out, gt)
 
@@ -129,7 +129,6 @@ class LFLoss():
             loss_dict['depth_loss'] = depth_loss.mean()
 
         if self.reg :
-            loss_dict['reg_loss'] = model_out['reg_loss']
-
+            loss_dict['reg_loss'] = reg_loss
         
         return loss_dict, {}
