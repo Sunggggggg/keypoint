@@ -127,86 +127,86 @@ def train(rank, world_size, args):
                 tqdm.write(f"[Epoch: {epoch}] [Iter: {total_steps}] Loss: {train_loss.item():.3f}\t ")
             del train_loss
 
-            if val_dataloader is not None:
-                print("Running validation set...")
-                with torch.no_grad():
-                    model.eval()
-                    val_losses = defaultdict(list)
-                    for val_i, (model_input, gt) in enumerate(val_dataloader):
-                        print("processing valid")
-                        model_input = util.dict_to_gpu(model_input)
-                        gt = util.dict_to_gpu(gt)
+        if val_dataloader is not None:
+            print("Running validation set...")
+            with torch.no_grad():
+                model.eval()
+                val_losses = defaultdict(list)
+                for val_i, (model_input, gt) in enumerate(val_dataloader):
+                    print("processing valid")
+                    model_input = util.dict_to_gpu(model_input)
+                    gt = util.dict_to_gpu(gt)
 
-                        model_input_full = model_input
-                        rgb_full = model_input['query']['rgb']
-                        uv_full = model_input['query']['uv']
-                        nrays = uv_full.size(2)         # 
-                        # chunks = nrays // 512 + 1
-                        chunks = nrays // 512 + 1
-                        # chunks = nrays // 384 + 1
+                    model_input_full = model_input
+                    rgb_full = model_input['query']['rgb']
+                    uv_full = model_input['query']['uv']
+                    nrays = uv_full.size(2)         # 
+                    # chunks = nrays // 512 + 1
+                    chunks = nrays // 512 + 1
+                    # chunks = nrays // 384 + 1
 
-                        z, _ = model.get_z(model_input)
+                    z, _ = model.get_z(model_input)
 
-                        rgb_chunks = torch.chunk(rgb_full, chunks, dim=2)
-                        uv_chunks = torch.chunk(uv_full, chunks, dim=2)
+                    rgb_chunks = torch.chunk(rgb_full, chunks, dim=2)
+                    uv_chunks = torch.chunk(uv_full, chunks, dim=2)
 
-                        model_outputs = []
+                    model_outputs = []
 
-                        for rgb_chunk, uv_chunk in zip(rgb_chunks, uv_chunks):
-                            model_input['query']['rgb'] = rgb_chunk
-                            model_input['query']['uv'] = uv_chunk
-                            model_output = model(model_input, z=z, val=True)
-                            del model_output['z']
-                            del model_output['coords']
-                            del model_output['at_wts']
+                    for rgb_chunk, uv_chunk in zip(rgb_chunks, uv_chunks):
+                        model_input['query']['rgb'] = rgb_chunk
+                        model_input['query']['uv'] = uv_chunk
+                        model_output = model(model_input, z=z, val=True)
+                        del model_output['z']
+                        del model_output['coords']
+                        del model_output['at_wts']
 
-                            model_output['pixel_val'] = model_output['pixel_val'].cpu()
+                        model_output['pixel_val'] = model_output['pixel_val'].cpu()
 
-                            model_outputs.append(model_output)
+                        model_outputs.append(model_output)
 
-                        model_output_full = {}
+                    model_output_full = {}
 
-                        for k in model_outputs[0].keys():
-                            outputs = [model_output[k] for model_output in model_outputs]
+                    for k in model_outputs[0].keys():
+                        outputs = [model_output[k] for model_output in model_outputs]
 
-                            if k == "pixel_val":
-                                val = torch.cat(outputs, dim=-3)
-                            else:
-                                val = torch.cat(outputs, dim=-2)
-                            model_output_full[k] = val
+                        if k == "pixel_val":
+                            val = torch.cat(outputs, dim=-3)
+                        else:
+                            val = torch.cat(outputs, dim=-2)
+                        model_output_full[k] = val
 
-                        model_output = model_output_full
-                        model_input['query']['rgb'] = rgb_full
+                    model_output = model_output_full
+                    model_input['query']['rgb'] = rgb_full
 
-                        val_loss, val_loss_smry = val_loss_fn(model_output, gt, val=True, model=model)
+                    val_loss, val_loss_smry = val_loss_fn(model_output, gt, val=True, model=model)
 
-                        for name, value in val_loss.items():
-                            val_losses[name].append(value)
+                    for name, value in val_loss.items():
+                        val_losses[name].append(value)
 
-                        # Render a video
+                    # Render a video
 
-                        # if val_i == batches_per_validation:
-                        break
+                    # if val_i == batches_per_validation:
+                    break
 
-                    for loss_name, loss in val_losses.items():
-                        single_loss = np.mean(np.concatenate([l.reshape(-1).cpu().numpy() for l in loss], axis=0))
+                for loss_name, loss in val_losses.items():
+                    single_loss = np.mean(np.concatenate([l.reshape(-1).cpu().numpy() for l in loss], axis=0))
 
-                    if rank == 0:
-                        rgbs = model_output_full['rgb'].reshape(args.batch_size, 256, 256, 3) # [B, H, W, 3]
-                        rgb8 = to8b(rgbs[-1].cpu().numpy())
-                        filename = os.path.join(fig_dir, f'{epoch}_{total_steps}_{single_loss:.4f}.png')
-                        imageio.imwrite(filename, rgb8)
+                if rank == 0:
+                    rgbs = model_output_full['rgb'].reshape(args.batch_size, 256, 256, 3) # [B, H, W, 3]
+                    rgb8 = to8b(rgbs[-1].cpu().numpy())
+                    filename = os.path.join(fig_dir, f'{epoch}_{total_steps}_{single_loss:.4f}.png')
+                    imageio.imwrite(filename, rgb8)
 
-                        rgb_full = rgb_full.reshape(args.batch_size, 256, 256, 3)
-                        rgb8 = to8b(rgb_full[-1].cpu().numpy())
-                        filename = os.path.join(fig_dir, f'{epoch}_{total_steps}_{single_loss:.4f}_GT.png')
-                        imageio.imwrite(filename, rgb8)
-                        print("Save Rendered images ", rgb8.shape)
-                model.train()
-        
-            if rank == 0:
-                torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict()},
-                        os.path.join(checkpoints_dir, 'model_final.pth'))
+                    rgb_full = rgb_full.reshape(args.batch_size, 256, 256, 3)
+                    rgb8 = to8b(rgb_full[-1].cpu().numpy())
+                    filename = os.path.join(fig_dir, f'{epoch}_{total_steps}_{single_loss:.4f}_GT.png')
+                    imageio.imwrite(filename, rgb8)
+                    print("Save Rendered images ", rgb8.shape)
+            model.train()
+    
+        if rank == 0:
+            torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict()},
+                    os.path.join(checkpoints_dir, 'model_final.pth'))
             
 if __name__ == "__main__":
     args = config_parser()
