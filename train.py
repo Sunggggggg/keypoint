@@ -145,7 +145,7 @@ def train(rank, world_size, args):
                     chunks = nrays // 512 + 1
                     # chunks = nrays // 384 + 1
 
-                    z = model.get_z(model_input)
+                    z, reg_loss = model.get_z(model_input)
 
                     rgb_chunks = torch.chunk(rgb_full, chunks, dim=2)
                     uv_chunks = torch.chunk(uv_full, chunks, dim=2)
