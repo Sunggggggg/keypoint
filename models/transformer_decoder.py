@@ -345,7 +345,7 @@ class MultiScaleQueryTransformerDecoder(nn.Module):
         path_2 = self.refinenet2(path_3, keypoint_maps[1])
         path_1 = self.refinenet1(path_2, keypoint_maps[0])
 
-        return [path_2, path_1], reg_loss[-1]
+        return [path_2, path_1], reg_losses[-1]
     
 if __name__ == '__main__' :
     x = torch.rand((4, 3, 256, 256))
