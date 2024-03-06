@@ -155,7 +155,7 @@ def train(rank, world_size, args):
                     for rgb_chunk, uv_chunk in zip(rgb_chunks, uv_chunks):
                         model_input['query']['rgb'] = rgb_chunk
                         model_input['query']['uv'] = uv_chunk
-                        model_output = model(model_input, z=z, val=True)
+                        model_output = model(model_input, z=z, reg_loss=reg_loss, val=True)
                         del model_output['z']
                         del model_output['coords']
                         del model_output['at_wts']
