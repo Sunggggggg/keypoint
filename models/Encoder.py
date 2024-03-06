@@ -203,7 +203,9 @@ class VolumeAttention(nn.Module):
             for name, param in self.backbone.named_parameters():
                 param.requires_grad_(False)
         #
-        self.query_embed = nn.Parameter(torch.rand(num_queries, hidden_dim), requires_grad=True)
+        self.query_embed = nn.Parameter(torch.randn(num_queries, hidden_dim), requires_grad=True)
+        self.query_id = nn.Parameter(torch.randn(num_queries, hidden_dim), requires_grad=True)
+
         self.cross_attention_blk1 = nn.ModuleList([
             CrossAttention(dim=hidden_dim, num_heads=num_head) for _ in range(depth)])
         self.cross_attention_blk2 = nn.ModuleList([
@@ -233,11 +235,15 @@ class VolumeAttention(nn.Module):
         x = x.reshape(s[0]//nviews, nviews, *s[1:])
         img1, img2 = x[:, 0], x[:, 1]       # [B, 3, H, W]
 
-        # 
-        pose_embed = self.pose_embed(rel_transform)         # [2B, hidden_dim]
+        # Camera pose embedding
+        pose_embed = self.pose_embed(rel_transform)                     # [2B, hidden_dim]
         pose_embed = pose_embed.reshape(s[0]//nviews, nviews, -1)
         pose_embed1, pose_embed2 = pose_embed[:, 0], pose_embed[:, 1]   # [B, hidden_dim]
 
+        # Query id embedding
+        quries = self.query_embed + self.query_id                       # [Q, e]
+        quries = quries[None, :, :].expand(B, self.num_query, self.hidden_dim)  # [B, Q, e]
+        
         # 
         keypoint_maps = []
         feats1, feats2 = self.backbone(img1), self.backbone(img2)   # [layer1, layer2, layer3, layer4]
@@ -247,10 +253,9 @@ class VolumeAttention(nn.Module):
 
             feat1 = feat1.reshape(B, self.hidden_dim, -1)   # [B, e, hw]
             feat2 = feat2.reshape(B, self.hidden_dim, -1)
-            # feat1 += pose_embed1[:, :, None]
-            # feat2 += pose_embed2[:, :, None]
+            feat1 += pose_embed1[:, :, None]
+            feat2 += pose_embed2[:, :, None]
 
-            quries = self.query_embed.expand(B, self.num_query, self.hidden_dim)
             for d in range(self.depth) :
                 quries = self.norm(quries)
                 quries = self.self_attention_blk[d](quries)

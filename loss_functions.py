@@ -81,9 +81,9 @@ def image_loss(model_out, gt, mask=None):
 
 
 class LFLoss():
-    def __init__(self, l2_weight=1e-3, lpips=False, depth=False, reg_weight=1e2):
+    def __init__(self, l2_weight=1e-3, lpips=False, depth=False, reg=True):
         self.l2_weight = l2_weight
-        self.reg_weight = reg_weight
+        self.reg = reg
         self.lpips = lpips
         self.depth = depth
 
@@ -100,14 +100,14 @@ class LFLoss():
         loss_dict['img_loss'] = image_loss(model_out, gt)
 
         if self.lpips:
-            gt_rgb = gt['rgb']
+            gt_rgb = gt['rgb']                      # [B, num_ctxt_views, H, W, 3]
             mask = gt['mask']
             pred_rgb = model_out['rgb']
             valid_mask = model_out['valid_mask']
             offset = 32
             gt_rgb = gt_rgb.reshape((-1, offset, offset, 3)).permute(0, 3, 1, 2)
             pred_rgb = pred_rgb.reshape((-1, offset, offset, 3)).permute(0, 3, 1, 2)
-
+            
             if mask.size(0) == gt_rgb.size(0):
                 gt_rgb = gt_rgb * mask[:, None, None, None]
                 pred_rgb = pred_rgb * mask[:, None, None, None]
@@ -128,5 +128,8 @@ class LFLoss():
             depth_loss = depth_dist * mask[:, None]
             loss_dict['depth_loss'] = depth_loss.mean()
 
+        if self.reg :
+            loss_dict['reg_loss'] = model_out['reg_loss']
 
+        
         return loss_dict, {}

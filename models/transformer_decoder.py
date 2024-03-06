@@ -3,6 +3,19 @@ import torchvision
 import torch.nn as nn
 from torch.nn import functional as F
 
+def QueryAggregation(queries1, queries2):
+    """
+    queries1, queries2 : [B, Q, e]
+    """
+    matching_score = torch.matmul(queries1, queries2.transpose(1, 2))
+    matching_score1 = matching_score.softmax(dim=1)
+    matching_score2 = matching_score.softmax(dim=2)
+
+    expect_queries = \
+        (torch.matmul(matching_score1.transpose(1, 2), queries1) + torch.matmul(matching_score2, queries2))/2
+    
+    return expect_queries
+
 class ResidualConvUnit_custom(nn.Module):
     def __init__(self, features, activation, bn):
         super().__init__()
@@ -248,8 +261,9 @@ class MultiScaleQueryTransformerDecoder(nn.Module):
                     dropout=0.0))
         
         # 
-        self.encode = nn.Linear(2*hidden_dim, hidden_dim)
-    
+        self.encode1 = nn.Conv2d(num_queries*2, num_queries, kernel_size=1, stride=1)
+        self.encode2 = nn.Conv2d(num_queries*2, num_queries, kernel_size=1, stride=1)
+
         self.refinenet1 = FeatureFusionBlock_custom(num_queries, nn.ReLU(False), deconv=False, bn=False, expand=False, align_corners=True)
         self.refinenet2 = FeatureFusionBlock_custom(num_queries, nn.ReLU(False), deconv=False, bn=False, expand=False, align_corners=True)
         self.refinenet3 = FeatureFusionBlock_custom(num_queries, nn.ReLU(False), deconv=False, bn=False, expand=False, align_corners=True)
@@ -275,7 +289,7 @@ class MultiScaleQueryTransformerDecoder(nn.Module):
         output = self.query_feat.weight.unsqueeze(0).repeat(B, 1, 1)
 
         # Feature map
-        keypoint_maps =[]
+        keypoint_maps, reg_losses =[], []
         feats1, feats2 = self.backbone(img1), self.backbone(img2)   # [layer3, layer2, layer1]
         for l in range(self.num_layers):
             feat1, feat2 = feats1[l], feats2[l]     # [B, hidden_dim, H, W]
@@ -296,10 +310,10 @@ class MultiScaleQueryTransformerDecoder(nn.Module):
                     output, feat2, cam_pos=pose_embed2, query_pos=query_embed
                 )
 
-                # Aggergation
-                output = torch.cat([output1, output2], dim=-1)          # [B, Q, 2e]
-                output = F.relu(self.encode(output))   # [B, e, Q]
-        
+                # output = torch.cat([output1, output2], dim=1)          # [B, 2Q, e]
+                # query_embed_extention = torch.cat([query_embed, query_embed], dim=1)
+                output = QueryAggregation(output1, output2)
+
                 #
                 output = self.transformer_self_attention_layers[d](
                     output, query_pos=query_embed
@@ -307,19 +321,31 @@ class MultiScaleQueryTransformerDecoder(nn.Module):
                 output = self.transformer_ffn_layers[d](
                     output
                 )
-        
             # 
-            keypoint_map1 = torch.matmul(output, feat1.transpose(1,2)).reshape(B, self.num_queries, h, w)    # [B, Q, e]*[B, e, hw] = [B, Q, h, w]
-            keypoint_map2 = torch.matmul(output, feat2.transpose(1,2)).reshape(B, self.num_queries, h, w)    
-            keypoint_map = torch.stack([keypoint_map1, keypoint_map2], dim=1)                 # [B, 2, Q, h, w]
+            keypoint_map11 = torch.matmul(output, feat1.transpose(1,2)).reshape(B, self.num_queries, h, w)      # [B, Q, e]*[B, e, hw] = [B, Q, h, w]
+            keypoint_map21 = torch.matmul(output2, feat1.transpose(1,2)).reshape(B, self.num_queries, h, w)
+            keypoint_map1 = torch.cat([keypoint_map11, keypoint_map21], dim=1)                                  # [B, 2Q, h, w]
+            keypoint_map1 = self.encode1(keypoint_map1)
+
+            keypoint_map22 = torch.matmul(output, feat2.transpose(1,2)).reshape(B, self.num_queries, h, w)
+            keypoint_map12 = torch.matmul(output1, feat2.transpose(1,2)).reshape(B, self.num_queries, h, w)
+            keypoint_map2 = torch.cat([keypoint_map12, keypoint_map22], dim=1)                                  # [B, 2Q, h, w]
+            keypoint_map2 = self.encode2(keypoint_map2)
+
+            keypoint_map = torch.stack([keypoint_map1, keypoint_map2], dim=1)                 
             keypoint_map = torch.flatten(keypoint_map, 0, 1)                # [2B, Q, H, W]
+            
+            # Regularization
+            reg_loss = torch.sum(keypoint_map21.flatten(2)*keypoint_map12.flatten(2), dim=-1).mean()
+            
             keypoint_maps.append(keypoint_map)
+            reg_losses.append(reg_loss)
 
         path_3 = self.refinenet3(keypoint_maps[2])
         path_2 = self.refinenet2(path_3, keypoint_maps[1])
         path_1 = self.refinenet1(path_2, keypoint_maps[0])
 
-        return [path_2, path_1]
+        return [path_2, path_1], reg_loss[-1]
     
 if __name__ == '__main__' :
     x = torch.rand((4, 3, 256, 256))
