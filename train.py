@@ -104,8 +104,8 @@ def train(rank, world_size, args):
             model_input = util.dict_to_gpu(model_input)
             gt = util.dict_to_gpu(gt)
 
-            model_output = model(model_input)
-            losses, loss_summaries = loss_fn(model_output, gt, model=model)
+            model_output, reg_loss = model(model_input)
+            losses, loss_summaries = loss_fn(model_output, gt, model=model, reg_loss=reg_loss)
 
             train_loss = 0.
             for loss_name, loss in losses.items():
