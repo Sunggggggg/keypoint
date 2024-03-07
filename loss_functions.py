@@ -70,6 +70,46 @@ class GaussianSmoothing(nn.Module):
         """
         return self.conv(input, weight=self.weight, groups=self.groups)
 
+class ContrastiveLoss(nn.Module):
+    def __init__(self, num_queries=100, temperature=0.5) :
+        super(ContrastiveLoss, self).__init__()
+        self.num_queries = num_queries
+        self.temperature = temperature
+        self.criterion = nn.CrossEntropyLoss(reduction="sum")
+        self.similarity_f = nn.CosineSimilarity(dim=2)
+        self.mask = self.make_mask()
+
+    def make_mask(self):
+        self.N = 2 * self.num_queries
+        mask = torch.ones((self.N, self.N), dtype=bool)
+    
+        for i in range(self.num_queries):
+            mask[i, i] = False
+            mask[i, self.num_queries + i] = False
+            mask[self.num_queries + i, i] = False
+            mask[self.num_queries + i, self.num_queries + i] = False
+        return mask
+    
+    def forward(self, q1, q2):
+        B = q1.shape[0]
+
+        q = torch.cat((q1, q2), dim=1)      # [B, 2Q, e]
+        sim = self.similarity_f(q.unsqueeze(2), q.unsqueeze(1)) / self.temperature # [B, 2Q, 2Q]
+        
+        sim_ii = torch.diag(sim, self.num_queries)      # [B, Q]
+        sim_jj = torch.diag(sim, -self.num_queries)     # [B, Q]
+
+        positive_samples = torch.cat((sim_ii, sim_jj), dim=1).reshape(B, self.N, 1)   # [B, 2Q, 1]
+
+        mask = self.mask.repeat(B, 1, 1)
+        negative_samples = sim[mask].reshape(B, self.N, -1)             # [B, 2Q, 2Q-2]    
+        labels = torch.from_numpy(np.array([0]*B*self.N)).reshape(B, -1).to(positive_samples.device).long()
+        
+        logits = torch.cat((positive_samples, negative_samples), dim=2)
+        loss = self.criterion(logits, labels)
+        loss /= self.N
+
+        return loss
 
 def image_loss(model_out, gt, mask=None):
     gt_rgb = gt['rgb']
@@ -78,27 +118,6 @@ def image_loss(model_out, gt, mask=None):
     rgb[torch.isnan(rgb)] = 0.0
     loss = torch.abs(gt_rgb - rgb).mean()
     return loss
-
-def forward(self, q1, q2):
-        B = q1.shape[0]
-
-        q = torch.cat((q1, q2), dim=1)                          # [B, 2Q, e]
-        sim = self.similarity_f(q.unsqueeze(2), q.unsqueeze(1)) # [B, 2Q, 2Q]
-        
-        sim_ii = torch.stack([torch.diag(x, self.num_queries) for x in sim], dim=0)     # [B, Q]
-        sim_jj = torch.stack([torch.diag(x, -self.num_queries) for x in sim], dim=0)    # [B, Q]
-
-        positive_samples = torch.cat((sim_ii, sim_jj), dim=1).reshape(B, self.N, 1)   # [B, 2Q, 1]
-
-        mask = self.mask.repeat(B, 1, 1)
-        negative_samples = sim[mask].reshape(B, self.N, -1)                           # [B, 2Q, 2Q-2]    
-        labels = torch.from_numpy(np.array([0]*B*(self.N-1))).reshape(B, -1).to(positive_samples.device).long() #[B, 2Q]
-        
-        logits = torch.cat((positive_samples, negative_samples), dim=2)         # [B, 2Q, 2Q-1]
-        loss = self.criterion(logits, labels)
-        loss /= self.N
-
-        return loss
 
 class LFLoss():
     def __init__(self, l2_weight=1e-3, lpips=False, depth=False):
@@ -150,5 +169,5 @@ class LFLoss():
         if self.contra :
             contra_losses = model_out['contra_losses']
             loss_dict['contra_loss'] = torch.tensor(contra_losses).mean()
-
+            
         return loss_dict, {}
