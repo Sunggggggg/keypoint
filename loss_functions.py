@@ -122,8 +122,9 @@ def image_loss(model_out, gt, mask=None):
     return loss
 
 class LFLoss():
-    def __init__(self, l2_weight=1e-3, lpips=False, depth=False):
+    def __init__(self, l2_weight=1e-3, lpips=False, depth=False, contra=True):
         self.l2_weight = l2_weight
+        self.contra = contra
         self.lpips = lpips
         self.depth = depth
 
