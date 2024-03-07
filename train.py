@@ -140,10 +140,8 @@ def train(rank, world_size, args):
                     model_input_full = model_input
                     rgb_full = model_input['query']['rgb']
                     uv_full = model_input['query']['uv']
-                    nrays = uv_full.size(2)         # 
-                    # chunks = nrays // 512 + 1
+                    nrays = uv_full.size(2)         
                     chunks = nrays // 512 + 1
-                    # chunks = nrays // 384 + 1
 
                     z, _ = model.get_z(model_input)
 
@@ -177,15 +175,6 @@ def train(rank, world_size, args):
 
                     model_output = model_output_full
                     model_input['query']['rgb'] = rgb_full
-
-                    val_loss, val_loss_smry = val_loss_fn(model_output, gt, val=True, model=model)
-
-                    for name, value in val_loss.items():
-                        val_losses[name].append(value)
-
-                    # Render a video
-
-                    # if val_i == batches_per_validation:
                     break
 
                 for loss_name, loss in val_losses.items():

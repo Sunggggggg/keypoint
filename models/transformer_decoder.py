@@ -2,6 +2,7 @@ import torch
 import torchvision
 import torch.nn as nn
 from torch.nn import functional as F
+from loss_functions import ContrastiveLoss
 
 def QueryAggregation(queries1, queries2):
     """
@@ -269,6 +270,9 @@ class MultiScaleQueryTransformerDecoder(nn.Module):
         self.refinenet3 = FeatureFusionBlock_custom(num_queries, nn.ReLU(False), deconv=False, bn=False, expand=False, align_corners=True)
         #self.refinenet4 = FeatureFusionBlock_custom(num_queries, nn.ReLU(False), deconv=False, bn=False, expand=False, align_corners=True)
 
+        # Loss func
+        self.loss_func = ContrastiveLoss(self.num_queries)
+
     def forward(self, x, rel_transform, nviews=2):
         """
         x               : [2B, 3, H, W]
@@ -289,7 +293,7 @@ class MultiScaleQueryTransformerDecoder(nn.Module):
         output = self.query_feat.weight.unsqueeze(0).repeat(B, 1, 1)
 
         # Feature map
-        keypoint_maps, reg_losses =[], []
+        keypoint_maps, contra_losses =[], []
         feats1, feats2 = self.backbone(img1), self.backbone(img2)   # [layer3, layer2, layer1]
         for l in range(self.num_layers):
             feat1, feat2 = feats1[l], feats2[l]     # [B, hidden_dim, H, W]
@@ -310,8 +314,7 @@ class MultiScaleQueryTransformerDecoder(nn.Module):
                     output, feat2, cam_pos=pose_embed2, query_pos=query_embed
                 )
 
-                # output = torch.cat([output1, output2], dim=1)          # [B, 2Q, e]
-                # query_embed_extention = torch.cat([query_embed, query_embed], dim=1)
+                contra_loss = self.loss_func(output1, output2)
                 output = QueryAggregation(output1, output2)
 
                 #
@@ -335,17 +338,14 @@ class MultiScaleQueryTransformerDecoder(nn.Module):
             keypoint_map = torch.stack([keypoint_map1, keypoint_map2], dim=1)                 
             keypoint_map = torch.flatten(keypoint_map, 0, 1)                # [2B, Q, H, W]
             
-            # Regularization
-            reg_loss = torch.sum(keypoint_map21.flatten(2)*keypoint_map12.flatten(2), dim=-1).mean()
-            
+            contra_losses.append(contra_loss)
             keypoint_maps.append(keypoint_map)
-            reg_losses.append(reg_loss)
-
+        # 
         path_3 = self.refinenet3(keypoint_maps[2])
         path_2 = self.refinenet2(path_3, keypoint_maps[1])
         path_1 = self.refinenet1(path_2, keypoint_maps[0])
 
-        return [path_2, path_1], reg_losses[-1]
+        return [path_2, path_1], contra_losses
     
 if __name__ == '__main__' :
     x = torch.rand((4, 3, 256, 256))

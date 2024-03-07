@@ -143,11 +143,11 @@ class CrossAttentionRenderer(nn.Module):
         else:
             cam2world_encode = rel_cam2world.view(-1, 16)
 
-        z, reg_loss = self.encoder.forward(rgb, cam2world_encode, self.n_view) # (b*n_ctxt, self.latent_dim, H, W)
+        z, contra_losses = self.encoder.forward(rgb, cam2world_encode, self.n_view) # (b*n_ctxt, self.latent_dim, H, W)
         z_conv = self.conv_map(rgb)
         z = z + [z_conv]
 
-        return z, reg_loss
+        return z, contra_losses
 
     def forward(self, input, z=None, val=False, debug=False):
 
@@ -161,8 +161,9 @@ class CrossAttentionRenderer(nn.Module):
 
         # Get img features
         if z is None:
-            z, reg_loss = self.get_z(input)
-            z_orig = z 
+            z, contra_losses = self.get_z(input)
+            out_dict['contra_losses'] = contra_losses
+            z_orig = z
         else:
             z_orig = z
 
